@@ -32,7 +32,7 @@ class Scenario:
         #        - min   (slow) - coeef = 1.3 (207s)
 
         self.world = {'props': {'min_dist_enabled': True, 'min_dist': 0.23, 'max_dist': 0.28},
-                      'events': [#{'task': 'room_centre'},
+                      'events': [{'task': 'room_centre'},
                                  {'task': 'clear_ahead'},
                                  {'task': 'move', 'robot_dir_travel': 1, 'dist': 15, 'velocity': 0.4},
                                  {'task': 'stop'}]}

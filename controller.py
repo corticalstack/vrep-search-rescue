@@ -27,7 +27,8 @@ class Map():
         self.alpha = 1 # The assumed thickness of obstacles
         #self.beta = 6
         #self.beta = 0.04
-        self.beta = 0.0350
+        #self.beta = 0.0350
+        self.beta = 5.0 * np.pi / 180.0
         self.z_max = 4
 
         # Pre-allocate the x and y positions of all grid positions into a 3D tensor
@@ -40,17 +41,34 @@ class Map():
         #self.l_free = np.log(0.35/0.65)
 
         self.l_occ = np.log(0.65 / 0.35)
-        self.l_free = np.log(0.35 / 0.85)
+        self.l_free = np.log(0.35 / 0.65)
 
-    def update_map(self, pose, bearing, z):
-        sen_angle = {0: -1.5708,
+    def update_map(self, robot, pose, bearing, z):
+        # sen_angle = {0: 1.5708,  # Need to amend angles here, the sign check sen 3 for eg
+        #              1: 0.872665,
+        #              2: 0.523599,
+        #              3: -0.174533,
+        #              4: -0.174533,
+        #              5: -0.523599,
+        #              6: -0.872665,
+        #              7: -1.5708,
+        #              8: -1.5708,
+        #              9: -2.26893,
+        #              10: -2.61799,
+        #              11: -2.96706,
+        #              12: 2.96706,
+        #              13: 2.61799,
+        #              14: 2.26893,
+        #              15: 1.5708}
+
+        sen_angle = {0: -1.57079,
                      1: -0.872665,
                      2: -0.523599,
-                     3: 0.174533,
+                     3: -0.174533,
                      4: 0.174533,
                      5: 0.523599,
                      6: 0.872665,
-                     7: 1.5708,
+                     7: 1.57079,
                      8: 1.5708,
                      9: 2.26893,
                      10: 2.61799,
@@ -74,18 +92,24 @@ class Map():
         theta_to_grid = np.arctan2(dx[1, :, :], dx[0, :, :]) - bearing # matrix of all bearings from robot to cell
 
         # Wrap to +pi / - pi
-        theta_to_grid[theta_to_grid > np.pi] -= 2. * np.pi
-        theta_to_grid[theta_to_grid < -np.pi] += 2. * np.pi
+        #theta_to_grid[theta_to_grid > np.pi] -= 2. * np.pi
+        #theta_to_grid[theta_to_grid < -np.pi] += 2. * np.pi
 
         dist_to_grid = scipy.linalg.norm(dx, axis=0) # matrix of L2 distance to all cells from robot
 
         # For each laser beam
         for i, z_i in enumerate(z):
             if z_i[1] is False:
+                #r = 4
                 continue
-            #if i != 3:
+            else:
+                r = z_i[0]  # range measured
+
+            #if i == 1 or i == 2 or i == 2 or i == 3 or i == 4 or i == 5 or i == 5 or i == 6:
+            #    pass
+            #else:
             #    continue
-            r = z_i[0] # range measured
+
             r = r * 100
             print('Range ', r)
             b = z_i[1] # bearing measured
@@ -93,8 +117,8 @@ class Map():
             b = sen_angle[i]
             # Calculate which cells are measured free or occupied, so we know which cells to update
             # Doing it this way is like a billion times faster than looping through each cell (because vectorized numpy is the only way to numpy)
-            free_mask = (np.abs(theta_to_grid - b) <= self.beta) & (dist_to_grid < (r))
-            occ_mask = (np.abs(theta_to_grid - b) <= self.beta) & (np.abs(dist_to_grid - r) <= self.alpha)
+            free_mask = (np.abs(theta_to_grid - b) <= self.beta/2.0) & (dist_to_grid < (r - self.alpha / 2.0))
+            occ_mask = (np.abs(theta_to_grid - b) <= self.beta/2.0) & (np.abs(dist_to_grid - r) <= self.alpha/2.0)
             # Adjust the cells appropriately
             self.log_prob_map[occ_mask] += self.l_occ
             self.log_prob_map[free_mask] += self.l_free
@@ -166,7 +190,7 @@ class Controller:
                 pose[1] = 750 + int(pose[1] * -100)
                 pose[0] = 750 + int(pose[0] * -100)
 
-                map.update_map(pose, bearing, self.robot.state['int']['prox_s'].last_read)  # update the map
+                map.update_map(self.robot, pose, bearing, self.robot.state['int']['prox_s'].last_read)  # update the map
 
                 # Think
                 # Possible impending collision - trigger stop unless excepted actions
@@ -205,7 +229,10 @@ class Controller:
         plt.imshow(1.0 - 1. / (1. + np.exp(map.log_prob_map)), 'Greys')
         #plt.pause(0.005)
         import seaborn as sns
-        #ax = sns.heatmap(map.log_prob_map)
+
+        plt.show()
+        plt.clf()
+        ax = sns.heatmap(map.log_prob_map)
         plt.show()
 
 

@@ -304,7 +304,7 @@ class PioneerP3dx(Robot):
 
         print('Error ', error)
 
-        if abs(error) < 0.12 and self.state['int']['cycle_i'] > 30:
+        if abs(error) < 0.15 and self.state['int']['cycle_i'] > 30:
             step_status['complete'] = True
             lg.message(logging.INFO, 'Wall Follow event complete')
             return
