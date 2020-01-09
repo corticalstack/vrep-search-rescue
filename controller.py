@@ -40,17 +40,25 @@ class Map():
         #self.l_free = np.log(0.35/0.65)
 
         self.l_occ = np.log(0.65 / 0.35)
-        self.l_free = np.log(0.35 / 0.65)
+        self.l_free = np.log(0.35 / 0.85)
 
     def update_map(self, pose, bearing, z):
-        sen_angle = {0: -1.57,
-                     1: -0.87,
-                     2: -0.52,
-                     3: -0.17,
-                     4: 0.17,
-                     5: 0.52,
-                     6: 0.87,
-                     7: 1.57}
+        sen_angle = {0: -1.5708,
+                     1: -0.872665,
+                     2: -0.523599,
+                     3: 0.174533,
+                     4: 0.174533,
+                     5: 0.523599,
+                     6: 0.872665,
+                     7: 1.5708,
+                     8: 1.5708,
+                     9: 2.26893,
+                     10: 2.61799,
+                     11: 2.96706,
+                     12: -2.96706,
+                     13: -2.61799,
+                     14: -2.26893,
+                     15: -1.5708}
 
         #bearing = bearing * math.pi/180
         print('bearing before', bearing)
@@ -73,12 +81,12 @@ class Map():
 
         # For each laser beam
         for i, z_i in enumerate(z):
-            if i > 7:
-                break
             if z_i[1] is False:
                 continue
+            #if i != 3:
+            #    continue
             r = z_i[0] # range measured
-            r = int(r * 100)
+            r = r * 100
             print('Range ', r)
             b = z_i[1] # bearing measured
             b = b * math.pi/180  # Convert to rads
@@ -133,7 +141,7 @@ class Controller:
                        'complete': None}
 
         grid_size = 1.0
-        map = Map(int(500 / grid_size), int(500 / grid_size), grid_size)
+        map = Map(int(1500 / grid_size), int(1500 / grid_size), grid_size)
 
 
 
@@ -155,8 +163,8 @@ class Controller:
                                                       vrep.simx_opmode_streaming)
                 bearing = self.robot.state['int']['compass'].last_read
                 pose = pos
-                pose[1] = int(pose[1] * 100) + 250
-                pose[0] = int(pose[0] * 100) + 250
+                pose[1] = 750 + int(pose[1] * -100)
+                pose[0] = 750 + int(pose[0] * -100)
 
                 map.update_map(pose, bearing, self.robot.state['int']['prox_s'].last_read)  # update the map
 
@@ -183,21 +191,21 @@ class Controller:
 
                 getattr(self.robot, step['task'])(step_status, self.world_props, task_args)
 
-                time.sleep(0.004)
+                #time.sleep(0.002)
 
         plt.clf()
 
 
-        circle = plt.Circle((pose[1], pose[0]), radius=3.0, fc='y')
-        plt.gca().add_patch(circle)
+        #circle = plt.Circle((pose[1], pose[0]), radius=3.0, fc='y')
+        #plt.gca().add_patch(circle)
 
-        arrow = pose[0:2] + np.array([3.5, 0]).dot(
-            np.array([[np.cos(bearing), np.sin(bearing)], [-np.sin(bearing), np.cos(bearing)]]))
-        plt.plot([pose[1], arrow[1]], [pose[0], arrow[0]])
-        #plt.imshow(1.0 - 1. / (1. + np.exp(map.log_prob_map)), 'Greys')
+        #arrow = pose[0:2] + np.array([3.5, 0]).dot(
+        #    np.array([[np.cos(bearing), np.sin(bearing)], [-np.sin(bearing), np.cos(bearing)]]))
+        #plt.plot([pose[1], arrow[1]], [pose[0], arrow[0]])
+        plt.imshow(1.0 - 1. / (1. + np.exp(map.log_prob_map)), 'Greys')
         #plt.pause(0.005)
         import seaborn as sns
-        ax = sns.heatmap(map.log_prob_map)
+        #ax = sns.heatmap(map.log_prob_map)
         plt.show()
 
 

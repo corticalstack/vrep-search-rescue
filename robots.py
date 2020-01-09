@@ -72,6 +72,7 @@ class PioneerP3dx(Robot):
                                             0.25 / 180.0 * math.pi, 0.25 / 180.0 * math.pi, 0.5 / 180.0 * math.pi,
                                             0.55 / 180.0 * math.pi, 0.75 / 180.0 * math.pi]}
 
+        self.count = 0
         # Pioneer specific internal and external state
         self.state = {'int': {'motors': [],
                               'motor_l_v': 0.0,
