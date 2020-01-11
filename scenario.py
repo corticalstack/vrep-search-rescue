@@ -31,11 +31,74 @@ class Scenario:
         #        - min   (fast) - coeef = 1.6 (164s)
         #        - min   (slow) - coeef = 1.3 (207s)
 
+        # self.world = {'props': {'min_dist_enabled': True, 'min_dist': 0.23, 'max_dist': 0.28},
+        #               'events': [{'task': 'room_centre'},
+        #                          {'task': 'clear_ahead'},
+        #                          {'task': 'move', 'robot_dir_travel': 1, 'dist': 15, 'velocity': 0.4},
+        #                          {'task': 'stop'}]}
+
+        # self.world = {'props': {'min_dist_enabled': True, 'min_dist': 0.23, 'max_dist': 0.28},
+        #               'events': [#{'task': 'room_centre'},
+        #                          #{'task': 'clear_ahead'},
+        #                          #{'task': 'move', 'robot_dir_travel': 1, 'dist': 15, 'velocity': 0.4},
+        #                          #{'task': 'stop'},
+        #                          {'task': 'turn', 'degrees': +30}]}
+
         self.world = {'props': {'min_dist_enabled': True, 'min_dist': 0.23, 'max_dist': 0.28},
-                      'events': [{'task': 'room_centre'},
-                                 {'task': 'clear_ahead'},
-                                 {'task': 'move', 'robot_dir_travel': 1, 'dist': 15, 'velocity': 0.4},
-                                 {'task': 'stop'}]}
+                       'events': [{'task': 'move', 'robot_dir_travel': 1, 'dist': 22.5, 'velocity': 0.05},
+                                 {'task': 'stop'},
+                                 {'task': 'turn', 'degrees': +90},
+                                 {'task': 'move', 'robot_dir_travel': 1, 'dist': 22, 'velocity': 0.05},
+                                 {'task': 'stop'},
+                                 {'task': 'turn', 'degrees': +90},
+                                 {'task': 'move', 'robot_dir_travel': 1, 'dist': 39.5, 'velocity': 0.05},
+                                 {'task': 'stop'},
+                                 {'task': 'turn', 'degrees': +90},
+                                 {'task': 'move', 'robot_dir_travel': 1, 'dist': 36.5, 'velocity': 0.05},
+                                 {'task': 'stop'},
+                                 {'task': 'turn', 'degrees': +90},
+                                 {'task': 'move', 'robot_dir_travel': 1, 'dist': 36, 'velocity': 0.05},
+                                 {'task': 'stop'},
+                                 {'task': 'turn', 'degrees': +90},
+                                 {'task': 'move', 'robot_dir_travel': 1, 'dist': 17, 'velocity': 0.05},
+                                 {'task': 'stop'},
+                                 {'task': 'turn', 'degrees': +45},
+                                 {'task': 'move', 'robot_dir_travel': 1, 'dist': 20, 'velocity': 0.05},
+                                 {'task': 'stop'},
+                                 {'task': 'turn', 'degrees': -45},
+                                 {'task': 'move', 'robot_dir_travel': 1, 'dist': 11.5, 'velocity': 0.05},
+                                 {'task': 'stop'},
+                                 {'task': 'turn', 'degrees': +90},
+                                 {'task': 'move', 'robot_dir_travel': 1, 'dist': 36, 'velocity': 0.05},
+                                 {'task': 'stop'},
+                                 {'task': 'turn', 'degrees': +90},
+                                 {'task': 'move', 'robot_dir_travel': 1, 'dist': 55, 'velocity': 0.05},
+                                 {'task': 'stop'},
+                                 {'task': 'turn', 'degrees': +90},
+                                 {'task': 'move', 'robot_dir_travel': 1, 'dist': 60, 'velocity': 0.05},
+                                 {'task': 'stop'},
+                                 {'task': 'turn', 'degrees': +90},
+                                 {'task': 'move', 'robot_dir_travel': 1, 'dist': 55, 'velocity': 0.05},
+                                 {'task': 'stop'},
+                                 {'task': 'turn', 'degrees': +90},
+                                 {'task': 'move', 'robot_dir_travel': 1, 'dist': 61, 'velocity': 0.05},
+                                 {'task': 'stop'}
+
+                           # {'task': 'turn', 'degrees': +87},
+                                 # {'task': 'move', 'robot_dir_travel': 1, 'dist': 14, 'velocity': 0.1},
+                                 # {'task': 'stop'},
+                                 # {'task': 'turn', 'degrees': +87},
+                                 # {'task': 'move', 'robot_dir_travel': 1, 'dist': 6, 'velocity': 0.1},
+                                 # {'task': 'stop'},
+                                 # {'task': 'turn', 'degrees': +87},
+                                 # {'task': 'move', 'robot_dir_travel': 1, 'dist': 5, 'velocity': 0.1},
+                                 ]}
+
+        # self.world = {'props': {'min_dist_enabled': True, 'min_dist': 0.23, 'max_dist': 0.28},
+        #               'events': [{'task': 'clear_ahead'}]}
+
+        # self.world = {'props': {'min_dist_enabled': True, 'min_dist': 0.23, 'max_dist': 0.28},
+        #               'events': [{'task': 'turn', 'degrees': +350}]}
 
         lg.message(logging.INFO, 'World props ' + str(self.world['props']))
         lg.message(logging.INFO, 'World events ' + str(self.world['events']))

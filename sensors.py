@@ -22,9 +22,25 @@ class ProximitySensor(Sensor):
     """
     def __init__(self, client_id, handle=None, sensor_array=None):
         Sensor.__init__(self, client_id, sensor_array=sensor_array)
-        self.detection_points = []
-        self.max_detection_dist = 6
+        self.max_detection_dist = 3.0
         self.last_read = self.read(vrep.simx_opmode_streaming)
+
+        self.sensor_angle = {0: -1.57079,
+                             1: -0.872665,
+                             2: -0.523599,
+                             3: -0.174533,
+                             4: 0.174533,
+                             5: 0.523599,
+                             6: 0.872665,
+                             7: 1.57079,
+                             8: 1.5708,
+                             9: 2.26893,
+                             10: 2.61799,
+                             11: 2.96706,
+                             12: -2.96706,
+                             13: -2.61799,
+                             14: -2.26893,
+                             15: -1.5708}
 
     def read(self, mode, handle=None, sensor_array=None):
         """
@@ -47,7 +63,7 @@ class Compass(Sensor):
     def __init__(self, client_id, handle=None, sensor_array=None):
         Sensor.__init__(self, client_id, handle=handle)
         self.to_bearing = None
-        self.last_read = self.read(vrep.simx_opmode_streaming, handle)
+        self.last_read_euler, self.last_read_mag_deg = self.read(vrep.simx_opmode_streaming, handle)
 
     def read(self, mode, handle=None):
         """
@@ -55,23 +71,21 @@ class Compass(Sensor):
         """
         res, bearing = vrep.simxGetObjectOrientation(self.client_id, handle, -1, mode)
 
-        # Bearing to magnetic degree
-        deg = math.degrees(bearing[2])
-        if deg > 0:
-            mag_deg = 360 - deg
+        self.last_read_euler = round(bearing[2], 2)
+        self.last_read_mag_deg = (180/math.pi) * bearing[2]
+        if self.last_read_mag_deg > 0:
+            self.last_read_mag_deg = 360 - self.last_read_mag_deg
         else:
-            mag_deg = deg * -1
+            self.last_read_mag_deg *= -1
 
-        #self.last_read = round(mag_deg, 0)
-        self.last_read = round(bearing[2], 2)
-        return self.last_read
+        return self.last_read_euler, self.last_read_mag_deg
 
     def set_to_bearing(self, degrees):
         """
         Calculate target magnetic bearing
         """
-        self.to_bearing = (self.last_read + degrees)
-        if self.to_bearing > 360:
+        self.to_bearing = round(self.last_read_mag_deg + degrees, 0)
+        if self.to_bearing >= 360:
             self.to_bearing -= 360
         elif self.to_bearing < 0:
             self.to_bearing += 360

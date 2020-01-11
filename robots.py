@@ -4,6 +4,7 @@ import vrep
 import math
 import time
 from sensors import ProximitySensor, Compass, Beacon
+from mapper import Mapper
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -65,7 +66,7 @@ class PioneerP3dx(Robot):
                       'chassis_h_mm': 237,
                       'weight_kg': 9,
                       'operating_payload_kg': 17,
-                      'def_ms_v': 0.5,
+                      'def_ms_v': 0.15,
                       'min_speed_ms': 0.12,
                       'max_speed_ms': 1.2,
                       'sensor_us_weights': [0.75 / 180.0 * math.pi, 0.55 / 180.0 * math.pi, 0.5 / 180.0 * math.pi,
@@ -98,7 +99,8 @@ class PioneerP3dx(Robot):
                       'ext': {'abs_pos_s': None,
                               'abs_pos_n': None,
                               'abs_pos_all': [],
-                              'beacon': None}}
+                              'beacon': None,
+                              'mapper': None}}
 
         # Initialise internal state for robot components
         self.state['int']['motors'] = self.get_components('Motor', simple_object_list)
@@ -106,16 +108,21 @@ class PioneerP3dx(Robot):
         self.state['int']['prox_s'] = ProximitySensor(helper.client_id, sensor_array=self.state['int']['prox_s_arr'])
         self.state['int']['compass'] = Compass(helper.client_id, handle=self.handle)
         self.state['ext']['beacon'] = Beacon(helper.client_id, handle=self.handle)
+        self.state['ext']['mapper'] = Mapper(self, handle=self.handle)
         self.set_joint_pos()
 
     def set_state_proximity(self, min_distance):
         """
         Boolean state indicating whether robot within specified minimum distance as detected front or rear array
         """
-        self.state['int']['prox_min_dist_f'] = min(self.state['int']['prox_s'].last_read[0:8][0])
-        self.state['int']['prox_min_dist_r'] = min(self.state['int']['prox_s'].last_read[8:16][0])
+        distance_readings = [dr[0] for dr in self.state['int']['prox_s'].last_read[0:8]]
+        self.state['int']['prox_min_dist_f'] = min(distance_readings)
+
+        distance_readings = [dr[0] for dr in self.state['int']['prox_s'].last_read[8:16]]
+        self.state['int']['prox_min_dist_r'] = min(distance_readings)
 
         if self.state['int']['prox_min_dist_f'] < min_distance:
+            print('Min dist', self.state['int']['prox_min_dist_f'])
             self.state['int']['prox_is_less_min_dist_f'] = True
         else:
             self.state['int']['prox_is_less_min_dist_f'] = False
@@ -172,7 +179,13 @@ class PioneerP3dx(Robot):
         Get current distance to beacon
         """
         self.state['ext']['beacon'].read(vrep.simx_opmode_buffer, handle=self.handle)
-        print('Distance to beacon ', self.state['ext']['beacon'].last_read)
+
+    def update_state_map(self):
+        """
+        Update map
+        """
+        self.state['ext']['mapper'].update_map()
+
 
     def set_motor_v(self):
         """
@@ -250,6 +263,7 @@ class PioneerP3dx(Robot):
         # Velocity as a "dist" is applied for specified time. Continue moving for "dist" or stop if proximity detected
         if 'dist' in args:
             if (time.time() - step_status['start_t'] > args['dist']) or self.is_less_min_prox_dir_travel():
+                print('les min ', self.state['int']['prox_is_less_min_dist_f'])
                 step_status['complete'] = True
                 lg.message(logging.INFO, 'Move event complete')
 
@@ -266,23 +280,47 @@ class PioneerP3dx(Robot):
                                                                               self.state['int']['compass'].to_bearing))
 
                 # Turn cw or ccw at slow speed to prevent overshooting
-                if args['degrees'] > 0:
-                    self.state['int']['motor_l_v'] = -0.1
-                    self.state['int']['motor_r_v'] = 0.1
-                else:
-                    self.state['int']['motor_l_v'] = 0.1
-                    self.state['int']['motor_r_v'] = -0.1
+                #if args['degrees'] > 0:
+                #    self.state['int']['motor_l_v'] = 0.015
+                #    self.state['int']['motor_r_v'] = -0.015
+                #else:
+                #    self.state['int']['motor_l_v'] = -0.015
+                #    self.state['int']['motor_r_v'] = 0.015
 
-                self.set_motor_v()
+                #self.set_motor_v()
             step_status['complete'] = False
 
+        new_error_diff = (self.state['int']['compass'].to_bearing -
+                          self.state['int']['compass'].last_read_mag_deg + 540) % 360 - 180
+        print('New diff error ', new_error_diff)
         # Subtract max from min between last compass state and target bearing. Turn threshold is 0.5 degrees
-        radius_threshold = 0.5
-        diff = max(self.state['int']['compass'].last_read, self.state['int']['compass'].to_bearing) - \
-               min(self.state['int']['compass'].last_read, self.state['int']['compass'].to_bearing)
-        if diff < radius_threshold:
+        radius_threshold = 0.7
+        if self.state['int']['compass'].last_read_mag_deg > self.state['int']['compass'].to_bearing:
+            error_diff = self.state['int']['compass'].to_bearing - self.state['int']['compass'].last_read_mag_deg
+        else:
+            error_diff = self.state['int']['compass'].last_read_mag_deg - self.state['int']['compass'].to_bearing
+        print('to bearing ', self.state['int']['compass'].to_bearing)
+        print('Error diff ', error_diff)
+
+        if new_error_diff < 0:
+            if new_error_diff < -40:
+                print('setting to -40')
+                new_error_diff = -40
+            self.state['int']['motor_l_v'] = -0.003 * (new_error_diff * 0.2)
+            self.state['int']['motor_r_v'] = 0.003 * (new_error_diff * 0.2)
+        else:
+            if new_error_diff > 30:
+                print('Setting error diff to 30')
+                new_error_diff = 30
+            self.state['int']['motor_l_v'] = 0.003 * (new_error_diff * 0.2)
+            self.state['int']['motor_r_v'] = -0.003 * (new_error_diff * 0.2)
+        self.set_motor_v()
+        #diff = max(self.state['int']['compass'].last_read_mag_deg, self.state['int']['compass'].to_bearing) - \
+        #       min(self.state['int']['compass'].last_read_mag_deg, self.state['int']['compass'].to_bearing)
+        if abs(new_error_diff) < radius_threshold:
             step_status['complete'] = True
             lg.message(logging.INFO, 'Turn event complete')
+
 
     def room_centre(self, step_status, world_props, args):
         from operator import itemgetter
