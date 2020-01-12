@@ -45,6 +45,7 @@ class Controller:
 
         stop_exceptions = ['wall_follow', 'room_centre', 'clear_ahead', 'turn', 'move']
         step_status = {'start_t': time.time(),
+                       'start_m': self.robot.get_distance(),
                        'complete': None}
 
         for step in self.world_events:
@@ -53,6 +54,7 @@ class Controller:
             task_args = None
 
             step_status['start_t'] = time.time()  # Log start, as some actions have lifetime defined in route plan
+            step_status['start_m'] = self.robot.get_distance()
             step_status['complete'] = None  # Step tristate - not started (None), in progress (False), complete (True)
             while not step_status['complete']:
                 # Sense
@@ -102,11 +104,7 @@ class Controller:
         """
         time_taken = round(time.time() - self.start_time, 2)
 
-        avg_joint_dist = 0
-        for m in self.robot.state['int']['motors']:
-            avg_joint_dist += self.robot.state['int']['jpos'][str(self.robot.state['int']['motors'][m] + '_dist')]
-
-        avg_joint_dist = round(avg_joint_dist / 2, 2)
+        avg_joint_dist = self.robot.get_distance()
         #avg_speed_ms = round(avg_joint_dist / time_taken, 2)
         lg.message(logging.INFO, 'Distance travelled - {}m'.format(avg_joint_dist))
         #lg.message(logging.INFO, 'Average speed - {}m/s'.format(avg_speed_ms))
@@ -125,3 +123,12 @@ class Controller:
         with open('output/error_history', 'w', newline='') as out:
             csv_output = csv.writer(out)
             csv_output.writerows(self.robot.state['int']['error_history'])
+
+    def get_dist(self):
+        avg_joint_dist = 0
+        try:
+            for m in self.robot.state['int']['motors']:
+                avg_joint_dist += self.robot.state['int']['jpos'][str(self.robot.state['int']['motors'][m] + '_dist')]
+        except KeyError:
+            return 0
+        return round(avg_joint_dist / 2, 2)
