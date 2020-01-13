@@ -6,6 +6,10 @@ import logging
 import logger as lg
 import csv
 
+import cProfile, pstats, io
+from pstats import SortKey
+pr = cProfile.Profile()
+
 
 class Controller:
     """
@@ -16,7 +20,10 @@ class Controller:
         self.world_props = world['props']
         self.world_events = world['events']
         self.start_time = 0
-
+        self.mcount = 0
+        self.mavg = 0
+        self.mtotal = 0
+        self.ftime = False
         # Instantiate helper and connect to VREP
         self.h = Helper()
         if not self.h.connected:
@@ -36,6 +43,7 @@ class Controller:
         self.h.disconnect_client()
 
     def loop(self):
+
         """
         Sequentially process planned events in a sense>think>act control cycle
         """
@@ -48,6 +56,9 @@ class Controller:
                        'start_m': self.robot.get_distance(),
                        'complete': None}
 
+        count = 0
+        last_t = time.time()
+
         for step in self.world_events:
             lg.message(logging.INFO, 'Starting event - ' + step['task'])
 
@@ -56,7 +67,23 @@ class Controller:
             step_status['start_t'] = time.time()  # Log start, as some actions have lifetime defined in route plan
             step_status['start_m'] = self.robot.get_distance()
             step_status['complete'] = None  # Step tristate - not started (None), in progress (False), complete (True)
+
+            # if time.time() - last_t < 1:
+            #     count += 1
+            # else:
+            #     print('Count per second ', count)
+            #     count = 0
+            #     last_t = time.time()
+
             while not step_status['complete']:
+
+                # if time.time() - last_t < 1:
+                #     count += 1
+                # else:
+                #     print('Count per second ', count)
+                #     count = 0
+                #     last_t = time.time()
+
                 # Sense
                 self.sense()
 
@@ -96,7 +123,30 @@ class Controller:
         self.robot.update_state_compass()
         self.robot.update_state_odometry()
         self.robot.update_state_beacon()
+        #stime = time.time()
+
+        # if self.ftime is False and self.mcount > 50:
+        #     pr.enable()
         self.robot.update_state_map()
+        #
+        # if self.ftime is False and self.mcount > 50:
+        #     self.ftime = True
+        #     pr.disable()
+        #     s = io.StringIO()
+        #     sortby = SortKey.CUMULATIVE
+        #     ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
+        #     ps.print_stats()
+        #     print(s.getvalue())
+        #
+        # self.mcount += 1
+        # s = time.time() - stime
+        # if s > 0:
+        #     self.mcount += 1
+        #     print('Count = ', self.mcount)
+        #     print('Seconds for mapping = ', s)
+        #     self.mtotal += s
+        #     self.mavg = self.mtotal/self.mcount
+        #     print('Average = ', self.mavg)
 
     def stats(self):
         """

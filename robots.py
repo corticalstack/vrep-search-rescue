@@ -295,7 +295,7 @@ class PioneerP3dx(Robot):
                                                                               self.state['int']['compass'].to_bearing))
             step_status['complete'] = False
 
-        radius_threshold = 0.7
+        radius_threshold = 0.15
         error_diff = (self.state['int']['compass'].to_bearing -
                       self.state['int']['compass'].last_read_mag_deg + 540) % 360 - 180
 

@@ -50,6 +50,8 @@ class Mapper:
         self.r_to_c_distance_grid = self.robot_to_cell_distance_grid()
 
         for i, sen in enumerate(self.robot.state['int']['prox_s'].last_read):
+            if i > 7:
+                continue
             if sen[1] is False:
                 continue
             else:
