@@ -22,25 +22,25 @@ class ProximitySensor(Sensor):
     """
     def __init__(self, client_id, handle=None, sensor_array=None):
         Sensor.__init__(self, client_id, sensor_array=sensor_array)
-        self.max_detection_dist = 3.0
+        self.max_detection_dist = 4.0
         self.last_read = self.read(vrep.simx_opmode_streaming)
 
-        self.sensor_angle = {0: -1.57079,
-                             1: -0.872665,
-                             2: -0.523599,
-                             3: -0.174533,
-                             4: 0.174533,
-                             5: 0.523599,
-                             6: 0.872665,
-                             7: 1.57079,
-                             8: 1.5708,
-                             9: 2.26893,
-                             10: 2.61799,
-                             11: 2.96706,
-                             12: -2.96706,
-                             13: -2.61799,
-                             14: -2.26893,
-                             15: -1.5708}
+        self.sensor_angle = {0: 1.57079,
+                             1: 0.872665,
+                             2: 0.523599,
+                             3: 0.174533,
+                             4: -0.174533,
+                             5: -0.523599,
+                             6:-0.872665,
+                             7: -1.57079,
+                             8: -1.5708,
+                             9: -2.26893,
+                             10: -2.61799,
+                             11: -2.96706,
+                             12: 2.96706,
+                             13: 2.61799,
+                             14: 2.26893,
+                             15: 1.5708}
 
     def read(self, mode, handle=None, sensor_array=None):
         """

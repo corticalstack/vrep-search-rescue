@@ -54,8 +54,8 @@ class Mapper:
                 continue
             if sen[1] is False:
                 continue
-            else:
-                self.sensor_distance = sen[0]
+
+            self.sensor_distance = sen[0]
 
             self.sensor_distance *= (100 * self.grid_res)
             self.sensor_angle = self.robot.state['int']['prox_s'].sensor_angle[i]
