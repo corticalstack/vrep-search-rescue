@@ -6,7 +6,8 @@ import time
 from sensors import ProximitySensor, Compass, Beacon
 from mapper import Mapper
 import numpy as np
-import matplotlib.pyplot as plt
+from operator import itemgetter
+import statistics
 
 
 class Robot:
@@ -99,6 +100,7 @@ class PioneerP3dx(Robot):
                       'ext': {'abs_pos_s': None,
                               'abs_pos_n': None,
                               'abs_pos_all': [],
+                              'waypoints': {},
                               'beacon': None,
                               'mapper': None}}
 
@@ -248,6 +250,14 @@ class PioneerP3dx(Robot):
                                                                          vrep.simx_opmode_streaming)
         self.state['ext']['abs_pos_all'].append(self.state['ext']['abs_pos_n'][0:2])
 
+    def set_waypoint(self, wp):
+        """
+        Set waypoint
+        """
+        res, self.state['ext']['waypoints'][wp] = vrep.simxGetObjectPosition(self.h.client_id, self.handle, -1,
+                                                                             vrep.simx_opmode_buffer)
+        lg.message(logging.DEBUG, 'Waypoint ' + wp + ' set to ' + str(self.state['ext']['waypoints'][wp]))
+
     def stop(self, step_status, world_props, args):
         """
         Stop robot locomotion
@@ -324,79 +334,44 @@ class PioneerP3dx(Robot):
         self.set_motor_v()
 
     def room_centre(self, step_status, world_props, args):
-        from operator import itemgetter
-        import statistics
+        kp = 0.155
+        clip_distance = 3
+        sensors = [s[0] if s[0] < clip_distance else clip_distance for s in self.state['int']['prox_s'].last_read]
 
-        mdd = self.state['int']['prox_s'].max_detection_dist
-        sensors = [s[0] if s[0] < mdd else mdd for s in self.state['int']['prox_s'].last_read]
-
-        # Used sensors numbered in VREp/Pioneer specs as 1 (front-left), 4 (front), 8 (front right) and 12 (rear)
+        # Used sensors numbered in VREP/Pioneer specs as 1 (front-left), 4 (front), 8 (front right) and 12 (rear)
         sensor_index = [0, 3, 7, 11]
 
         # Get subset of sensor distances using specified sensor indexes
         sensor_list = list(itemgetter(*sensor_index)(sensors))
-        sensor_list = np.clip(sensor_list, 0, 3)
-        # e(t) is SP - PV
-        #error = sensor_list[0] - (sum(sensor_list) / len(sensor_list))
+
+        # Get standard deviation for set of sensor values to determine diff between them
         error = statistics.stdev(sensor_list)
-        if len(set(sensor_list)) == 1 and sensor_list[0] != 1:
-            print('list all the same')
 
-        print('Sensor list ', sensor_list)
-        print('Error ', error)
-
-        error1 = sensor_list[0] - sensor_list[2]
-        error2 = sensor_list[1] - sensor_list[3]
-        if abs(error) < 0.2 and self.state['int']['cycle_i'] > 30:
+        # Task is complete if all sensors read acceptable similar distance to each other (standard deviation)
+        if abs(error) < 0.20:
             step_status['complete'] = True
             lg.message(logging.INFO, 'Wall Follow event complete')
+            self.set_waypoint('HP Centre')
             return
 
-        baseline_v1 = error1 * 0.15
-        baseline_v2 = error2 * 0.15
-        print('Baseline v1 ', baseline_v1)
-        print('Baseline v2 ', baseline_v2)
+        # Errors as diff between opposing sensors
+        left_right_error = sensor_list[0] - sensor_list[2]
+        front_rear_error = sensor_list[1] - sensor_list[3]
 
-        error3 = baseline_v1 - baseline_v2 * 2
-        print('Error 3 ', error3)
-        if error1 < 0:
-            self.state['int']['motor_l_v'] = baseline_v1
-            self.state['int']['motor_r_v'] = baseline_v2
+        # Drive motors using horizontal and vertical error
+        if left_right_error < 0:
+            self.state['int']['motor_l_v'] = left_right_error * kp
+            self.state['int']['motor_r_v'] = front_rear_error * kp
         else:
-            self.state['int']['motor_l_v'] = baseline_v2
-            self.state['int']['motor_r_v'] = baseline_v1
-        self.set_motor_v()
-        return
-
-        p = 0.12 * error
-        p2 = 2.5
-        output = p
-        baseline_v = 0.01 - math.sqrt(abs(p))  # Dynamic baseline speed with P control gain
-        print('Baseline ', baseline_v)
-        if sensor_list[0] < sensor_list[2]:
-            self.state['int']['motor_l_v'] = baseline_v + abs(output * p2)
-            self.state['int']['motor_r_v'] = baseline_v - abs(output * p2)
-        else:
-            self.state['int']['motor_l_v'] = baseline_v - abs(output * p2)
-            self.state['int']['motor_r_v'] = baseline_v + abs(output * p2)
+            self.state['int']['motor_l_v'] = front_rear_error * kp
+            self.state['int']['motor_r_v'] = left_right_error * kp
 
         self.set_motor_v()
 
     def clear_ahead(self, step_status, world_props, args):
-        from operator import itemgetter
-        import statistics
-
-        sensors = [s[1] if s[0] == 6 else 1 for s in self.state['int']['prox_s'].last_read]
-        sensor_index = [0, 3, 7, 11]
-        sensor_list = list(itemgetter(*sensor_index)(sensors))
-
-        print("Ahead ", sensor_list[1])
-        # e(t) is SP - PV
-        #error = sensor_list[0] - (sum(sensor_list) / len(sensor_list))
-        error = statistics.stdev(sensor_list)
-        if self.state['int']['prox_s'].last_read[3][1] is False:
+        if self.state['int']['prox_s'].last_read[4][0] > 3:
             step_status['complete'] = True
-            lg.message(logging.INFO, 'Wall Follow event complete')
+            lg.message(logging.INFO, 'Clear ahead event complete')
             return
 
         self.state['int']['motor_l_v'] = -0.01

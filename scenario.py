@@ -39,8 +39,8 @@ class Scenario:
 
         self.world = {'props': {'min_dist_enabled': True, 'min_dist': 0.23, 'max_dist': 0.28},
                       'events': [{'task': 'room_centre'},
-                                 #{'task': 'clear_ahead'},
-                                 #{'task': 'move', 'robot_dir_travel': 1, 'dist': 15, 'velocity': 0.4},
+                                 {'task': 'clear_ahead'},
+                                 {'task': 'move', 'robot_dir_travel': 1, 'distm': 2.2, 'velocity': 0.2},
                                  {'task': 'stop'}]}
 
 
