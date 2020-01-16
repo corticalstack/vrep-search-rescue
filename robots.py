@@ -289,53 +289,6 @@ class PioneerP3dx(Robot):
                 step_status['complete'] = True
                 lg.message(logging.INFO, 'Move distm event complete')
 
-    # def move(self, step_status, world_props, args):
-    #     """
-    #     Move robot as locomotion task
-    #     """
-    #     velocity = self.props['def_ms_v']  # Set default velocity
-    #
-    #     if 'robot_dir_travel' in args:
-    #         self.robot_dir_travel = args['robot_dir_travel']
-    #
-    #     if 'velocity' in args:
-    #         velocity = args['velocity']
-    #
-    #     if step_status['complete'] is None:
-    #         # Direction travel - forward = 1, reverse = -1
-    #         self.state['int']['motor_l_v'] = velocity * self.robot_dir_travel
-    #         self.state['int']['motor_r_v'] = velocity * self.robot_dir_travel
-    #         self.set_motor_v()
-    #         step_status['complete'] = False
-    #
-    #     # Velocity as a distance is applied for specified time. Continue moving until "distt" satisfied or stop if
-    #     # proximity detected
-    #     if 'distt' in args:
-    #         if (time.time() - step_status['start_t'] > args['dist']) or self.is_less_min_prox_dir_travel():
-    #             step_status['complete'] = True
-    #             lg.message(logging.INFO, 'Move distt event complete')
-    #
-    #     # Metres as a distance. Continue moving until "distm" satisfied or stop if proximity detected
-    #     if 'distm' in args:
-    #         kp = 0.3
-    #         distm_min_threshold = 0.07
-    #         distm_p_active_threshold = velocity * 2.3
-    #         error = args['distm'] - (self.get_distance() - step_status['start_m'])
-    #         if abs(error) < distm_min_threshold:
-    #             print('Error ', error)
-    #             step_status['complete'] = True
-    #             lg.message(logging.INFO, 'Move distm event complete')
-    #             return
-    #         if error < distm_p_active_threshold:
-    #             print('Error ', error)
-    #             if error < 0:
-    #                 self.state['int']['motor_l_v'] = (velocity * error * kp) * self.robot_dir_travel
-    #                 self.state['int']['motor_r_v'] = (velocity * error * kp) * self.robot_dir_travel
-    #             else:
-    #                 self.state['int']['motor_l_v'] = (-velocity * error * kp) * self.robot_dir_travel
-    #                 self.state['int']['motor_r_v'] = (-velocity * error * kp) * self.robot_dir_travel
-    #             self.set_motor_v()
-
     def turn(self, step_status, world_props, args):
         """
         Turn robot task - calculate new bearing relative to current orientation and turn cw or ccw at constant speed
@@ -376,37 +329,56 @@ class PioneerP3dx(Robot):
 
         mdd = self.state['int']['prox_s'].max_detection_dist
         sensors = [s[0] if s[0] < mdd else mdd for s in self.state['int']['prox_s'].last_read]
-        sensor_index = [0, 3, 7, 11]
-        sensor_list = list(itemgetter(*sensor_index)(sensors))
 
+        # Used sensors numbered in VREp/Pioneer specs as 1 (front-left), 4 (front), 8 (front right) and 12 (rear)
+        sensor_index = [0, 3, 7, 11]
+
+        # Get subset of sensor distances using specified sensor indexes
+        sensor_list = list(itemgetter(*sensor_index)(sensors))
+        sensor_list = np.clip(sensor_list, 0, 3)
         # e(t) is SP - PV
         #error = sensor_list[0] - (sum(sensor_list) / len(sensor_list))
         error = statistics.stdev(sensor_list)
         if len(set(sensor_list)) == 1 and sensor_list[0] != 1:
             print('list all the same')
 
-        print('Cycle ', self.state['int']['cycle_i'])
-        print('Sensors ', self.state['int']['prox_s'].last_read)
         print('Sensor list ', sensor_list)
-
         print('Error ', error)
 
-        if abs(error) < 0.15 and self.state['int']['cycle_i'] > 30:
+        error1 = sensor_list[0] - sensor_list[2]
+        error2 = sensor_list[1] - sensor_list[3]
+        if abs(error) < 0.2 and self.state['int']['cycle_i'] > 30:
             step_status['complete'] = True
             lg.message(logging.INFO, 'Wall Follow event complete')
             return
 
-        p = 0.12 * error
+        baseline_v1 = error1 * 0.15
+        baseline_v2 = error2 * 0.15
+        print('Baseline v1 ', baseline_v1)
+        print('Baseline v2 ', baseline_v2)
 
-        output = p
-        baseline_v = 0.02 - math.sqrt(abs(p))  # Dynamic baseline speed with P control gain
-        #if error < 0:
-        if sensor_list[0] < sensor_list[2]:
-            self.state['int']['motor_l_v'] = baseline_v + abs(output * 1.2)
-            self.state['int']['motor_r_v'] = baseline_v - abs(output * 1.2)
+        error3 = baseline_v1 - baseline_v2 * 2
+        print('Error 3 ', error3)
+        if error1 < 0:
+            self.state['int']['motor_l_v'] = baseline_v1
+            self.state['int']['motor_r_v'] = baseline_v2
         else:
-            self.state['int']['motor_l_v'] = baseline_v - abs(output * 1.2)
-            self.state['int']['motor_r_v'] = baseline_v + abs(output * 1.2)
+            self.state['int']['motor_l_v'] = baseline_v2
+            self.state['int']['motor_r_v'] = baseline_v1
+        self.set_motor_v()
+        return
+
+        p = 0.12 * error
+        p2 = 2.5
+        output = p
+        baseline_v = 0.01 - math.sqrt(abs(p))  # Dynamic baseline speed with P control gain
+        print('Baseline ', baseline_v)
+        if sensor_list[0] < sensor_list[2]:
+            self.state['int']['motor_l_v'] = baseline_v + abs(output * p2)
+            self.state['int']['motor_r_v'] = baseline_v - abs(output * p2)
+        else:
+            self.state['int']['motor_l_v'] = baseline_v - abs(output * p2)
+            self.state['int']['motor_r_v'] = baseline_v + abs(output * p2)
 
         self.set_motor_v()
 
