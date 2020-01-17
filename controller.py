@@ -51,7 +51,8 @@ class Controller:
 
         self.start_time = time.time()
 
-        stop_exceptions = ['wall_follow', 'room_centre', 'clear_ahead', 'turn', 'move']
+        stop_exceptions = ['room_centre', 'turn', 'locate_beacon_random']
+        beacon_tasks = ['room_centre', 'turn', 'locate_beacon_random']
         step_status = {'start_t': time.time(),
                        'start_m': self.robot.get_distance(),
                        'complete': None}
@@ -68,21 +69,8 @@ class Controller:
             step_status['start_m'] = self.robot.get_distance()
             step_status['complete'] = None  # Step tristate - not started (None), in progress (False), complete (True)
 
-            # if time.time() - last_t < 1:
-            #     count += 1
-            # else:
-            #     print('Count per second ', count)
-            #     count = 0
-            #     last_t = time.time()
-
             while not step_status['complete']:
 
-                # if time.time() - last_t < 1:
-                #     count += 1
-                # else:
-                #     print('Count per second ', count)
-                #     count = 0
-                #     last_t = time.time()
 
                 # Sense
                 self.sense()
@@ -94,7 +82,7 @@ class Controller:
                     self.robot.stop(step_status, self.world_props, task_args)
                     continue
 
-                if self.robot.is_prox_to_beacon() and step['task'] not in stop_exceptions:
+                if self.robot.is_prox_to_beacon()and step['task'] in beacon_tasks:
                     print('Proximity to beacon')
                     lg.message(logging.INFO, 'Stop task triggered')
                     self.robot.stop(step_status, self.world_props, task_args)
@@ -123,30 +111,7 @@ class Controller:
         self.robot.update_state_compass()
         self.robot.update_state_odometry()
         self.robot.update_state_beacon()
-        #stime = time.time()
-
-        # if self.ftime is False and self.mcount > 50:
-        #     pr.enable()
         self.robot.update_state_map()
-        #
-        # if self.ftime is False and self.mcount > 50:
-        #     self.ftime = True
-        #     pr.disable()
-        #     s = io.StringIO()
-        #     sortby = SortKey.CUMULATIVE
-        #     ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
-        #     ps.print_stats()
-        #     print(s.getvalue())
-        #
-        # self.mcount += 1
-        # s = time.time() - stime
-        # if s > 0:
-        #     self.mcount += 1
-        #     print('Count = ', self.mcount)
-        #     print('Seconds for mapping = ', s)
-        #     self.mtotal += s
-        #     self.mavg = self.mtotal/self.mcount
-        #     print('Average = ', self.mavg)
 
     def stats(self):
         """
@@ -173,12 +138,3 @@ class Controller:
         with open('output/error_history', 'w', newline='') as out:
             csv_output = csv.writer(out)
             csv_output.writerows(self.robot.state['int']['error_history'])
-
-    def get_dist(self):
-        avg_joint_dist = 0
-        try:
-            for m in self.robot.state['int']['motors']:
-                avg_joint_dist += self.robot.state['int']['jpos'][str(self.robot.state['int']['motors'][m] + '_dist')]
-        except KeyError:
-            return 0
-        return round(avg_joint_dist / 2, 2)

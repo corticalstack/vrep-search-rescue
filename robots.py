@@ -8,7 +8,7 @@ from mapper import Mapper
 import numpy as np
 from operator import itemgetter
 import statistics
-
+import random
 
 class Robot:
     """
@@ -91,6 +91,8 @@ class PioneerP3dx(Robot):
                               'prox_s': None,
                               'prox_is_less_min_dist_f': False,
                               'prox_is_less_min_dist_r': False,
+                              'lb_turn_status': {'complete': None, 'degrees': 0, 'args': {}},
+                              'lb_move_status': {'complete': None, 'startm': 0, 'args': {}},
                               'prox_min_dist_f': 0,
                               'prox_min_dist_r': 0,
                               'compass': None,
@@ -124,17 +126,20 @@ class PioneerP3dx(Robot):
         """
         distance_readings = [dr[0] for dr in self.state['int']['prox_s'].last_read[0:8]]
         self.state['int']['prox_min_dist_f'] = min(distance_readings)
+        print('Min f ', min(distance_readings))
 
         distance_readings = [dr[0] for dr in self.state['int']['prox_s'].last_read[8:16]]
         self.state['int']['prox_min_dist_r'] = min(distance_readings)
+        print('Min r ', min(distance_readings))
 
         if self.state['int']['prox_min_dist_f'] < min_distance:
-            print('Min dist', self.state['int']['prox_min_dist_f'])
+            print('Min dist f', self.state['int']['prox_min_dist_f'])
             self.state['int']['prox_is_less_min_dist_f'] = True
         else:
             self.state['int']['prox_is_less_min_dist_f'] = False
 
         if self.state['int']['prox_min_dist_r'] < min_distance:
+            print('Min dist r', self.state['int']['prox_min_dist_r'])
             self.state['int']['prox_is_less_min_dist_r'] = True
         else:
             self.state['int']['prox_is_less_min_dist_r'] = False
@@ -144,8 +149,12 @@ class PioneerP3dx(Robot):
         Returns boolean state indicating if robot proximity less than minimum distance for direction of travel
         """
         if self.robot_dir_travel == 1:
+            print('Here 4')
+            print('min dist f ', self.state['int']['prox_is_less_min_dist_f'])
             return self.state['int']['prox_is_less_min_dist_f']
         else:
+            print('Here 5')
+            print('min dist r ', self.state['int']['prox_is_less_min_dist_r'])
             return self.state['int']['prox_is_less_min_dist_r']
 
     def prox_dist_dir_travel(self):
@@ -271,20 +280,25 @@ class PioneerP3dx(Robot):
         """
         Move robot as locomotion task
         """
-        velocity = self.props['def_ms_v']  # Set default velocity
+        kp = 1
+        distance = self.prox_dist_dir_travel()
+        if distance > 1:
+            distance = 1
+        error = distance * kp
 
         if 'robot_dir_travel' in args:
             self.robot_dir_travel = args['robot_dir_travel']
 
+        velocity = self.props['def_ms_v']  # Set default velocity
         if 'velocity' in args:
             velocity = args['velocity']
 
-        if step_status['complete'] is None:
-            # Direction travel - forward = 1, reverse = -1
-            self.state['int']['motor_l_v'] = velocity * self.robot_dir_travel
-            self.state['int']['motor_r_v'] = velocity * self.robot_dir_travel
-            self.set_motor_v()
-            step_status['complete'] = False
+        baseline_v = velocity * error
+
+        self.state['int']['motor_l_v'] = baseline_v * self.robot_dir_travel
+        self.state['int']['motor_r_v'] = baseline_v * self.robot_dir_travel
+        self.set_motor_v()
+        step_status['complete'] = False
 
         # Velocity as a distance is applied for specified time. Continue moving until "distt" satisfied or stop if
         # proximity detected
@@ -310,7 +324,7 @@ class PioneerP3dx(Robot):
                                                                               self.state['int']['compass'].to_bearing))
             step_status['complete'] = False
 
-        kp = 0.2  # p-controller gain
+        kp = 0.5  # p-controller gain
         radius_threshold = 0.15
         error = (self.state['int']['compass'].to_bearing -
                  self.state['int']['compass'].last_read_mag_deg + 540) % 360 - 180
@@ -320,6 +334,7 @@ class PioneerP3dx(Robot):
             lg.message(logging.INFO, 'Turn event complete')
             return
 
+        print('Turning - correcting error ', error)
         if error < 0:
             if error < -30:  # Cap diff
                 error = -30
@@ -379,75 +394,66 @@ class PioneerP3dx(Robot):
 
         self.set_motor_v()
 
-    def search_beacon(self, min_dist, max_dist, gain, motor_index):
-        """
-        This wall follow algorithm uses a PID controller approach
-        """
-        # Get PV
+    def locate_beacon_random(self, step_status, world_props, args):
 
-        attractice_gain = 5
-        repulsive_gain = 5
+        clip_distance = self.state['int']['prox_s'].max_detection_dist
+        sensors = [s[0] if s[0] < clip_distance else clip_distance for s in self.state['int']['prox_s'].last_read]
 
-        ensors = [s[0] if s[0] < 6 else 1 for s in self.state['int']['prox_s'].last_read]
-        sensor_index = [0, 3, 7, 11]
+        if self.state['int']['lb_turn_status']['complete'] is None:
+
+            # Get sensor distance
+
+            # Used sensors numbered in VREP/Pioneer specs as 1 (front-left), 4 (front), 8 (front right) and 12 (rear)
+            sensor_index = [0, 7]
+
+            # Get subset of sensor distances using specified sensor indexes
+            sensor_list = list(itemgetter(*sensor_index)(sensors))
+
+            print('Sensor 0 distance ', sensor_list[0])
+            print('Sensor 1 distance ', sensor_list[1])
+            diff = abs(sensor_list[0] - sensor_list[1])
+            print('Diff ', diff)
+            if diff == 0:
+                diff = 1
+
+            if sensor_list[0] > sensor_list[1]:
+                self.state['int']['lb_turn_status']['degrees'] = random.randrange(-90,-25, 5) * diff
+            else:
+                self.state['int']['lb_turn_status']['degrees'] = random.randrange(25, 90, 5) * diff
+            print('Turn degrees set to ', self.state['int']['lb_turn_status']['degrees'])
+            self.state['int']['lb_turn_status']['args'] = {'degrees': self.state['int']['lb_turn_status']['degrees']}
+
+        if self.state['int']['lb_turn_status']['complete'] is not True:
+            print('Turning')
+            self.turn(self.state['int']['lb_turn_status'], world_props, self.state['int']['lb_turn_status']['args'])
+            return
+
+        if self.state['int']['lb_move_status']['complete'] is None:
+            print('Stopping turn')
+            self.stop(self.state['int']['lb_turn_status'], world_props, {})
+            print('Setting move distance')
+            self.state['int']['lb_move_status']['start_m'] = self.get_distance()
+
+
+
+        sensor_index = [3, 11]
+
+        # Get subset of sensor distances using specified sensor indexes
         sensor_list = list(itemgetter(*sensor_index)(sensors))
+        if self.state['int']['lb_move_status']['complete'] is None:
+            if sensor_list[0] > sensor_list[1]:
+                dir = 1
+            else:
+                dir = -1
+            self.state['int']['lb_move_status']['args'] = {'velocity': 0.3, 'distm': 20, 'robot_dir_travel': dir}
 
-        # Remember sensors not in order JP - can I resolve this?
-        # Calculate repulse
-        # repulse_left = 0
-        # for s in sensor_list:
-        #     repulse_left = repulse_left + (repulse_gain / left sensor)
-        #
-        # repulse_right = 0
-        # for s in sensor_list:
-        #     repulse_right = repulse_right + (repulse_gain / right_sensor)
+        self.move(self.state['int']['lb_move_status'], world_props, self.state['int']['lb_move_status']['args'])
+        print('Triggering move')
 
-
-
-
-        # Calculate gain
-
-
-
-
-
-        # e(t) is SP - PV
-        error = min_dist - distance
-
-        # Accumulate navigation error
-        self.state['int']['err_corr_count'] += abs(error)
-
-        # Integral short-term memory
-        self.state['int']['pid_sum_error_short_term'].insert(0, error)  # Add error to top of list
-        if len(self.state['int']['pid_sum_error_short_term']) > 100:
-            self.state['int']['pid_sum_error_short_term'].pop()  # Remove last item
-
-        # Traditional integral implementation
-        #self.state['int']['pid_sum_error'] += error
-
-        p = 0.00002 * error
-
-        #i = 0
-        #i = self.state['int']['pid']['ki'] * self.pid_integral_clamp(self.state['int']['pid_sum_error'])
-        i = self.state['int']['pid']['ki'] * self.pid_integral_clamp(sum(self.state['int']['pid_sum_error_short_term']))
-
-        #d = 0
-        d = self.state['int']['pid']['kd'] * (error - self.state['int']['pid_prev_error'])
-
-        output = p + i + d
-        self.state['int']['error_history'].append((self.state['int']['cycle_i'], output))  # Supports telemetry
-
-        #baseline_v = 0.39  # Fixed baseline speed
-        baseline_v = 0.47 - math.sqrt(abs(p))  # Dynamic baseline speed with P control gain
-
-        if error < 0:
-            self.state['int']['motor_l_v'] = baseline_v + abs(output)
-            self.state['int']['motor_r_v'] = baseline_v - abs(output)
-        else:
-            self.state['int']['motor_l_v'] = baseline_v - abs(output)
-            self.state['int']['motor_r_v'] = baseline_v + abs(output)
-
-        self.state['int']['pid_prev_error'] = error  # Log error supporting derivative
+        if self.state['int']['lb_move_status']['complete']:
+            print('Move complete - Resetting status')
+            self.state['int']['lb_turn_status']['complete'] = None
+            self.state['int']['lb_move_status']['complete'] = None
 
     def wall_follow_pid(self, min_dist, max_dist, gain, motor_index):
         """
