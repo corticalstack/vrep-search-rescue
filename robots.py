@@ -126,20 +126,16 @@ class PioneerP3dx(Robot):
         """
         distance_readings = [dr[0] for dr in self.state['int']['prox_s'].last_read[0:8]]
         self.state['int']['prox_min_dist_f'] = min(distance_readings)
-        print('Min f ', min(distance_readings))
 
         distance_readings = [dr[0] for dr in self.state['int']['prox_s'].last_read[8:16]]
         self.state['int']['prox_min_dist_r'] = min(distance_readings)
-        print('Min r ', min(distance_readings))
 
         if self.state['int']['prox_min_dist_f'] < min_distance:
-            print('Min dist f', self.state['int']['prox_min_dist_f'])
             self.state['int']['prox_is_less_min_dist_f'] = True
         else:
             self.state['int']['prox_is_less_min_dist_f'] = False
 
         if self.state['int']['prox_min_dist_r'] < min_distance:
-            print('Min dist r', self.state['int']['prox_min_dist_r'])
             self.state['int']['prox_is_less_min_dist_r'] = True
         else:
             self.state['int']['prox_is_less_min_dist_r'] = False
@@ -149,12 +145,8 @@ class PioneerP3dx(Robot):
         Returns boolean state indicating if robot proximity less than minimum distance for direction of travel
         """
         if self.robot_dir_travel == 1:
-            print('Here 4')
-            print('min dist f ', self.state['int']['prox_is_less_min_dist_f'])
             return self.state['int']['prox_is_less_min_dist_f']
         else:
-            print('Here 5')
-            print('min dist r ', self.state['int']['prox_is_less_min_dist_r'])
             return self.state['int']['prox_is_less_min_dist_r']
 
     def prox_dist_dir_travel(self):
@@ -170,7 +162,7 @@ class PioneerP3dx(Robot):
         """
         Returns boolean state indicating if robot proximity less than minimum distance to beacon
         """
-        if self.state['ext']['beacon'].last_read < 1:
+        if self.state['ext']['beacon'].last_read < 0.5:
             return True
         else:
             return False
@@ -326,6 +318,9 @@ class PioneerP3dx(Robot):
 
         kp = 0.5  # p-controller gain
         radius_threshold = 0.15
+        if 'radius_threshold' in args:
+            radius_threshold = args['radius_threshold']
+
         error = (self.state['int']['compass'].to_bearing -
                  self.state['int']['compass'].last_read_mag_deg + 540) % 360 - 180
 
@@ -334,7 +329,6 @@ class PioneerP3dx(Robot):
             lg.message(logging.INFO, 'Turn event complete')
             return
 
-        print('Turning - correcting error ', error)
         if error < 0:
             if error < -30:  # Cap diff
                 error = -30
@@ -396,6 +390,18 @@ class PioneerP3dx(Robot):
 
     def locate_beacon_random(self, step_status, world_props, args):
 
+        if self.state['int']['lb_move_status']['complete'] is False:
+            # check distance to hp within 3m then stop
+            if  self.h.within_dist(self.state['ext']['waypoints']['HP Centre'], self.state['ext']['abs_pos_n'], dist_threshold=2.1):
+                self.stop(self.state['int']['lb_move_status'], world_props, {})
+                self.state['int']['lb_turn_status']['complete'] = None
+                self.state['int']['lb_move_status']['complete'] = None
+                self.state['int']['motor_l_v'] = 0.6 * (self.robot_dir_travel * -1)
+                self.state['int']['motor_r_v'] = 0.6 * (self.robot_dir_travel * -1)
+                self.set_motor_v()
+                time.sleep(0.7)
+
+
         clip_distance = self.state['int']['prox_s'].max_detection_dist
         sensors = [s[0] if s[0] < clip_distance else clip_distance for s in self.state['int']['prox_s'].last_read]
 
@@ -409,29 +415,32 @@ class PioneerP3dx(Robot):
             # Get subset of sensor distances using specified sensor indexes
             sensor_list = list(itemgetter(*sensor_index)(sensors))
 
-            print('Sensor 0 distance ', sensor_list[0])
-            print('Sensor 1 distance ', sensor_list[1])
-            diff = abs(sensor_list[0] - sensor_list[1])
-            print('Diff ', diff)
-            if diff == 0:
-                diff = 1
+            diff = 1
+            if sensor_list[0] != sensor_list[1]:
+                diff = abs(sensor_list[0] - sensor_list[1])
+
+            ran = random.randrange(5, 180, 5)
+            print('Ran ', ran)
+            print('Ran * diff ', ran * math.sqrt(diff))
+            #ran = ran * math.sqrt(diff)
 
             if sensor_list[0] > sensor_list[1]:
-                self.state['int']['lb_turn_status']['degrees'] = random.randrange(-90,-25, 5) * diff
+                ran1 = ran * -1
+                print('Ran1 ', ran1)
+                self.state['int']['lb_turn_status']['degrees'] = ran1
             else:
-                self.state['int']['lb_turn_status']['degrees'] = random.randrange(25, 90, 5) * diff
+
+                self.state['int']['lb_turn_status']['degrees'] = ran
             print('Turn degrees set to ', self.state['int']['lb_turn_status']['degrees'])
-            self.state['int']['lb_turn_status']['args'] = {'degrees': self.state['int']['lb_turn_status']['degrees']}
+            self.state['int']['lb_turn_status']['args'] = {'degrees': self.state['int']['lb_turn_status']['degrees'],
+                                                           'radius_threshold': 0.26}
 
         if self.state['int']['lb_turn_status']['complete'] is not True:
-            print('Turning')
             self.turn(self.state['int']['lb_turn_status'], world_props, self.state['int']['lb_turn_status']['args'])
             return
 
         if self.state['int']['lb_move_status']['complete'] is None:
-            print('Stopping turn')
             self.stop(self.state['int']['lb_turn_status'], world_props, {})
-            print('Setting move distance')
             self.state['int']['lb_move_status']['start_m'] = self.get_distance()
 
 
@@ -441,17 +450,18 @@ class PioneerP3dx(Robot):
         # Get subset of sensor distances using specified sensor indexes
         sensor_list = list(itemgetter(*sensor_index)(sensors))
         if self.state['int']['lb_move_status']['complete'] is None:
-            if sensor_list[0] > sensor_list[1]:
-                dir = 1
+            if self.h.within_dist(self.state['ext']['waypoints']['HP Centre'], self.state['ext']['abs_pos_n'], dist_threshold=3.2):
+                dir =  self.robot_dir_travel * -1
             else:
-                dir = -1
-            self.state['int']['lb_move_status']['args'] = {'velocity': 0.3, 'distm': 20, 'robot_dir_travel': dir}
+                if sensor_list[0] > sensor_list[1] or self.h.within_dist(self.state['ext']['waypoints']['HP Centre'], self.state['ext']['abs_pos_n'], dist_threshold=3.2):
+                    dir = 1
+                else:
+                    dir = -1
+            self.state['int']['lb_move_status']['args'] = {'velocity': 0.26, 'distm': 20, 'robot_dir_travel': dir}
 
         self.move(self.state['int']['lb_move_status'], world_props, self.state['int']['lb_move_status']['args'])
-        print('Triggering move')
 
         if self.state['int']['lb_move_status']['complete']:
-            print('Move complete - Resetting status')
             self.state['int']['lb_turn_status']['complete'] = None
             self.state['int']['lb_move_status']['complete'] = None
 

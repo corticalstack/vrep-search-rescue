@@ -74,7 +74,7 @@ class Mapper:
             self.bearing += math.pi
 
     def world_to_grid_pose(self):
-        self.pose = self.robot.state['ext']['abs_pos_n']
+        self.pose = self.robot.state['ext']['abs_pos_n'].copy()
         if len(set(self.pose)) == 1:
             return False
         self.pose[0] = int((self.x_size / 2) + int(self.pose[0] * -100) * self.grid_res)
