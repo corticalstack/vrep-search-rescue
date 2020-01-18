@@ -443,7 +443,7 @@ class PioneerP3dx(Robot):
                     'radius_threshold': 0.3}
             else:
             # Random angle to turn
-                random_degree = random.randrange(5, 180, 2)
+                random_degree = random.randrange(2, 180, 2)
                 if sensor_list[0] > sensor_list[1]:
                     random_degree *= -1  # Turn ccw
 
@@ -465,17 +465,17 @@ class PioneerP3dx(Robot):
         # Prepare move action
         if self.state['int']['lb_move_status']['complete'] is None:
             self.state['int']['lb_move_status']['start_m'] = self.get_distance()  # Current dist travelled as start dist
-
+            dir = 1
             # Flip direction of travel if within vicinity of HP doorway
-            if self.h.within_dist(self.state['ext']['waypoints']['HP Centre'], self.state['ext']['abs_pos_n'], dist_threshold=2.1):
-                dir = self.robot_dir_travel * -1
-            else:
+            #if self.h.within_dist(self.state['ext']['waypoints']['HP Centre'], self.state['ext']['abs_pos_n'], dist_threshold=2.1):
+            #    dir = self.robot_dir_travel * -1
+            #else:
                 # Otherwise if front sensor shows greater distance than rear then move forward, else reverse
                 #if sensor_list[0] > sensor_list[1]:
                 #    dir = 1
                 #else:
                 #    dir = -1
-                dir = 1
+            #    dir = 1
 
             # Prepare args for move action
             self.state['int']['lb_move_status']['args'] = {'velocity': 0.26, 'distm': 20, 'robot_dir_travel': dir}
