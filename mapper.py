@@ -100,5 +100,9 @@ class Mapper:
         plt.imshow(1.0 - 1. / (1. + np.exp(self.map_grid)), 'Greys')
         plt.show()
 
+    def save_map_to_disk(self):
+        np.save('data/og_map', self.map_grid)
 
+    def load_map_from_disk(self):
+        self.map_grid = np.load('data/og_map.npy')
 

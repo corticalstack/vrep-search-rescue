@@ -52,13 +52,10 @@ class Controller:
         self.start_time = time.time()
 
         stop_exceptions = ['room_centre', 'turn', 'locate_beacon_random']
-        beacon_tasks = ['room_centre', 'turn', 'locate_beacon_random']
+        beacon_tasks = ['locate_beacon_random']
         step_status = {'start_t': time.time(),
                        'start_m': self.robot.get_distance(),
                        'complete': None}
-
-        count = 0
-        last_t = time.time()
 
         for step in self.world_events:
             lg.message(logging.INFO, 'Starting event - ' + step['task'])
@@ -71,7 +68,6 @@ class Controller:
 
             while not step_status['complete']:
 
-
                 # Sense
                 self.sense()
 
@@ -83,9 +79,18 @@ class Controller:
                     continue
 
                 if self.robot.is_prox_to_beacon()and step['task'] in beacon_tasks:
-                    print('Proximity to beacon')
+                    lg.message(logging.INFO, 'Proximity to beacon triggered')
+                    self.robot.state['ext']['mapper'].save_map_to_disk()
+                    lg.message(logging.INFO, 'OG map saved to disk')
+                    self.robot.state['int']['lb_status']['complete'] = True
                     lg.message(logging.INFO, 'Stop task triggered')
                     self.robot.stop(step_status, self.world_props, task_args)
+                    lg.message(logging.INFO, 'LBR Distance travelled - {}m'.format(
+                        self.robot.get_distance() - self.robot.state['int']['lb_status']['start_m']))
+                    lg.message(logging.INFO, 'LBR time taken - {}s'.format(
+                        round(time.time() - self.robot.state['int']['lb_status']['start_t'], 2)))
+                    lg.message(logging.INFO, 'LBR number of turns - {}'.format(
+                        self.robot.state['int']['lb_status']['turns_count']))
                     continue
 
                 # Act
@@ -97,8 +102,6 @@ class Controller:
                     continue
 
                 getattr(self.robot, step['task'])(step_status, self.world_props, task_args)
-
-                #time.sleep(0.002)
 
         self.robot.state['ext']['mapper'].render_map()
 
@@ -117,7 +120,6 @@ class Controller:
         """
         Show simulation statistics
         """
-        time_taken = round(time.time() - self.start_time, 2)
 
         avg_joint_dist = self.robot.get_distance()
         #avg_speed_ms = round(avg_joint_dist / time_taken, 2)

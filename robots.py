@@ -10,6 +10,7 @@ from operator import itemgetter
 import statistics
 import random
 
+
 class Robot:
     """
     Super class implementing robot
@@ -91,6 +92,7 @@ class PioneerP3dx(Robot):
                               'prox_s': None,
                               'prox_is_less_min_dist_f': False,
                               'prox_is_less_min_dist_r': False,
+                              'lb_status': {'complete': None, 'turns_count': 0, 'start_t': 0, 'start_m': 0},
                               'lb_turn_status': {'complete': None, 'degrees': 0, 'args': {}},
                               'lb_move_status': {'complete': None, 'startm': 0, 'args': {}},
                               'prox_min_dist_f': 0,
@@ -251,13 +253,14 @@ class PioneerP3dx(Robot):
                                                                          vrep.simx_opmode_streaming)
         self.state['ext']['abs_pos_all'].append(self.state['ext']['abs_pos_n'][0:2])
 
-    def set_waypoint(self, wp):
+    def set_waypoint(self, step_status, world_props, args):
         """
         Set waypoint
         """
-        res, self.state['ext']['waypoints'][wp] = vrep.simxGetObjectPosition(self.h.client_id, self.handle, -1,
-                                                                             vrep.simx_opmode_buffer)
-        lg.message(logging.DEBUG, 'Waypoint ' + wp + ' set to ' + str(self.state['ext']['waypoints'][wp]))
+        res, self.state['ext']['waypoints'][args['wp']] = vrep.simxGetObjectPosition(self.h.client_id, self.handle, -1,
+                                                                                   vrep.simx_opmode_buffer)
+        lg.message(logging.DEBUG, 'Waypoint ' + args['wp'] + ' set to ' + str(self.state['ext']['waypoints'][args['wp']]))
+        step_status['complete'] = True
 
     def stop(self, step_status, world_props, args):
         """
@@ -311,9 +314,13 @@ class PioneerP3dx(Robot):
         """
         if step_status['complete'] is None:
             if 'degrees' in args:
-                self.state['int']['compass'].set_to_bearing(args['degrees'])
+                self.state['int']['compass'].set_to_bearing_add_deg(args['degrees'])
                 lg.message(logging.DEBUG, 'Turn bearing from {} to {}'.format(self.state['int']['compass'].last_read,
                                                                               self.state['int']['compass'].to_bearing))
+            if 'fixed' in args:
+                self.state['int']['compass'].set_to_bearing_fixed(args['fixed'])
+                lg.message(logging.DEBUG, 'Fixed to bearing {}'.format(self.state['int']['compass'].to_bearing))
+
             step_status['complete'] = False
 
         kp = 0.5  # p-controller gain
@@ -325,6 +332,7 @@ class PioneerP3dx(Robot):
                  self.state['int']['compass'].last_read_mag_deg + 540) % 360 - 180
 
         if abs(error) < radius_threshold:
+            self.stop(step_status, world_props, {})
             step_status['complete'] = True
             lg.message(logging.INFO, 'Turn event complete')
             return
@@ -360,7 +368,7 @@ class PioneerP3dx(Robot):
         if abs(error) < 0.20:
             step_status['complete'] = True
             lg.message(logging.INFO, 'Wall Follow event complete')
-            self.set_waypoint('HP Centre')
+            self.set_waypoint({}, {}, {'wp': 'HP Centre'})
             return
 
         # Errors as diff between opposing sensors
@@ -389,78 +397,93 @@ class PioneerP3dx(Robot):
         self.set_motor_v()
 
     def locate_beacon_random(self, step_status, world_props, args):
+        # Save start distance and time to internal state
+        if self.state['int']['lb_status']['complete'] is None:
+            self.state['int']['lb_status']['start_m'] = self.get_distance()
+            self.state['int']['lb_status']['start_t'] = time.time()
+            self.state['int']['lb_status']['complete'] = False
 
-        if self.state['int']['lb_move_status']['complete'] is False:
-            # check distance to hp within 3m then stop
-            if  self.h.within_dist(self.state['ext']['waypoints']['HP Centre'], self.state['ext']['abs_pos_n'], dist_threshold=2.1):
-                self.stop(self.state['int']['lb_move_status'], world_props, {})
-                self.state['int']['lb_turn_status']['complete'] = None
-                self.state['int']['lb_move_status']['complete'] = None
-                self.state['int']['motor_l_v'] = 0.6 * (self.robot_dir_travel * -1)
-                self.state['int']['motor_r_v'] = 0.6 * (self.robot_dir_travel * -1)
-                self.set_motor_v()
-                time.sleep(0.7)
+        # Check if move in progress is near HP doorway by checking distance from current location  to HP centre
+        if self.state['int']['lb_move_status']['complete'] is False \
+                and (self.h.within_dist(self.state['ext']['waypoints']['HP Centre'], self.state['ext']['abs_pos_n'],
+                                        dist_threshold=2.1)):
+            # Stop robot as close to doorway
+            self.stop(self.state['int']['lb_move_status'], world_props, {})
 
+            # Move robot away from doorway by nudging it the robot away in opposite direction
+            #self.state['int']['motor_l_v'] = 0.6 * (self.robot_dir_travel * -1)
+            #self.state['int']['motor_r_v'] = 0.6 * (self.robot_dir_travel * -1)
+            #self.set_motor_v()
+            #time.sleep(0.8)
 
+            # Reset, ready to start a new turn & move combo
+            self.state['int']['lb_turn_status']['complete'] = None
+            self.state['int']['lb_move_status']['complete'] = None
+
+        # Get sensor distances, can now use maximum range when pinging scene
         clip_distance = self.state['int']['prox_s'].max_detection_dist
         sensors = [s[0] if s[0] < clip_distance else clip_distance for s in self.state['int']['prox_s'].last_read]
 
+        # Prepare a new random turn
         if self.state['int']['lb_turn_status']['complete'] is None:
+            self.state['int']['lb_status']['turns_count'] += 1
 
-            # Get sensor distance
-
-            # Used sensors numbered in VREP/Pioneer specs as 1 (front-left), 4 (front), 8 (front right) and 12 (rear)
+            # Get ranges for left and right sensors
             sensor_index = [0, 7]
-
-            # Get subset of sensor distances using specified sensor indexes
             sensor_list = list(itemgetter(*sensor_index)(sensors))
 
-            diff = 1
-            if sensor_list[0] != sensor_list[1]:
-                diff = abs(sensor_list[0] - sensor_list[1])
+            if (self.h.within_dist(self.state['ext']['waypoints']['HP Centre'], self.state['ext']['abs_pos_n'],
+                                dist_threshold=2.1)):
+                random_degree = random.randrange(120, 240, 2)
+                self.state['int']['lb_turn_status']['degrees'] = random_degree
 
-            ran = random.randrange(5, 180, 5)
-            print('Ran ', ran)
-            print('Ran * diff ', ran * math.sqrt(diff))
-            #ran = ran * math.sqrt(diff)
-
-            if sensor_list[0] > sensor_list[1]:
-                ran1 = ran * -1
-                print('Ran1 ', ran1)
-                self.state['int']['lb_turn_status']['degrees'] = ran1
+                # Prepare args for turn action
+                self.state['int']['lb_turn_status']['args'] = {
+                    'fixed': self.state['int']['lb_turn_status']['degrees'],
+                    'radius_threshold': 0.3}
             else:
+            # Random angle to turn
+                random_degree = random.randrange(5, 180, 2)
+                if sensor_list[0] > sensor_list[1]:
+                    random_degree *= -1  # Turn ccw
 
-                self.state['int']['lb_turn_status']['degrees'] = ran
-            print('Turn degrees set to ', self.state['int']['lb_turn_status']['degrees'])
-            self.state['int']['lb_turn_status']['args'] = {'degrees': self.state['int']['lb_turn_status']['degrees'],
-                                                           'radius_threshold': 0.26}
+                self.state['int']['lb_turn_status']['degrees'] = random_degree
 
+                # Prepare args for turn action
+                self.state['int']['lb_turn_status']['args'] = {'degrees': self.state['int']['lb_turn_status']['degrees'],
+                                                               'radius_threshold': 0.3}
+
+        # Execute turn action until it is signalled complete internally within method
         if self.state['int']['lb_turn_status']['complete'] is not True:
             self.turn(self.state['int']['lb_turn_status'], world_props, self.state['int']['lb_turn_status']['args'])
             return
 
-        if self.state['int']['lb_move_status']['complete'] is None:
-            self.stop(self.state['int']['lb_turn_status'], world_props, {})
-            self.state['int']['lb_move_status']['start_m'] = self.get_distance()
-
-
-
+        # Get ranges for front and rear sensors
         sensor_index = [3, 11]
-
-        # Get subset of sensor distances using specified sensor indexes
         sensor_list = list(itemgetter(*sensor_index)(sensors))
+
+        # Prepare move action
         if self.state['int']['lb_move_status']['complete'] is None:
-            if self.h.within_dist(self.state['ext']['waypoints']['HP Centre'], self.state['ext']['abs_pos_n'], dist_threshold=3.2):
-                dir =  self.robot_dir_travel * -1
+            self.state['int']['lb_move_status']['start_m'] = self.get_distance()  # Current dist travelled as start dist
+
+            # Flip direction of travel if within vicinity of HP doorway
+            if self.h.within_dist(self.state['ext']['waypoints']['HP Centre'], self.state['ext']['abs_pos_n'], dist_threshold=2.1):
+                dir = self.robot_dir_travel * -1
             else:
-                if sensor_list[0] > sensor_list[1] or self.h.within_dist(self.state['ext']['waypoints']['HP Centre'], self.state['ext']['abs_pos_n'], dist_threshold=3.2):
-                    dir = 1
-                else:
-                    dir = -1
+                # Otherwise if front sensor shows greater distance than rear then move forward, else reverse
+                #if sensor_list[0] > sensor_list[1]:
+                #    dir = 1
+                #else:
+                #    dir = -1
+                dir = 1
+
+            # Prepare args for move action
             self.state['int']['lb_move_status']['args'] = {'velocity': 0.26, 'distm': 20, 'robot_dir_travel': dir}
 
+        # Execute move action until it is signalled complete internally within method
         self.move(self.state['int']['lb_move_status'], world_props, self.state['int']['lb_move_status']['args'])
 
+        # If move is complete then reset status for turn & move combo, ready for another cycle
         if self.state['int']['lb_move_status']['complete']:
             self.state['int']['lb_turn_status']['complete'] = None
             self.state['int']['lb_move_status']['complete'] = None

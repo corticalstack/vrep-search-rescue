@@ -80,15 +80,27 @@ class Compass(Sensor):
 
         return self.last_read_euler, self.last_read_mag_deg
 
-    def set_to_bearing(self, degrees):
+    def set_to_bearing_add_deg(self, degrees):
         """
         Calculate target magnetic bearing
         """
+        print('Last mag degree ', self.last_read_mag_deg)
+        print('Passed degrees ', degrees)
         self.to_bearing = round(self.last_read_mag_deg + degrees, 0)
         if self.to_bearing >= 360:
             self.to_bearing -= 360
         elif self.to_bearing < 0:
             self.to_bearing += 360
+        print('To bearing ', self.to_bearing)
+
+    def set_to_bearing_fixed(self, degrees):
+        """
+        Calculate target magnetic bearing
+        """
+        print('Last mag degree ', self.last_read_mag_deg)
+        print('Passed degrees ', degrees)
+        self.to_bearing = round(degrees, 0)
+        print('To bearing ', self.to_bearing)
 
 
 class Beacon(Sensor):
