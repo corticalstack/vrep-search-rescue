@@ -26,8 +26,8 @@ class Controller:
         self.ftime = False
         # Instantiate helper and connect to VREP
         self.h = Helper()
-        if not self.h.connected:
-            sys.exit()
+        #if not self.h.connected:
+        #    sys.exit()
 
         # Get all objects from running VREP scene
         self.full_scene_object_list, self.simple_object_list = self.h.get_objects()
@@ -104,6 +104,7 @@ class Controller:
                 getattr(self.robot, step['task'])(step_status, self.world_props, task_args)
 
         self.robot.state['ext']['mapper'].render_map()
+        self.robot.state['ext']['mapper'].save_map_to_disk()
 
     def sense(self):
         """

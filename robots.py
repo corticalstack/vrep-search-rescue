@@ -126,10 +126,10 @@ class PioneerP3dx(Robot):
         """
         Boolean state indicating whether robot within specified minimum distance as detected front or rear array
         """
-        distance_readings = [dr[0] for dr in self.state['int']['prox_s'].last_read[0:8]]
+        distance_readings = [dr[0] for dr in self.state['int']['prox_s'].last_read[3:5]]
         self.state['int']['prox_min_dist_f'] = min(distance_readings)
 
-        distance_readings = [dr[0] for dr in self.state['int']['prox_s'].last_read[8:16]]
+        distance_readings = [dr[0] for dr in self.state['int']['prox_s'].last_read[11:13]]
         self.state['int']['prox_min_dist_r'] = min(distance_readings)
 
         if self.state['int']['prox_min_dist_f'] < min_distance:
@@ -355,7 +355,7 @@ class PioneerP3dx(Robot):
         clip_distance = 3
         sensors = [s[0] if s[0] < clip_distance else clip_distance for s in self.state['int']['prox_s'].last_read]
 
-        # Used sensors numbered in VREP/Pioneer specs as 1 (front-left), 4 (front), 8 (front right) and 12 (rear)
+        # Used sensors numbered in VREP/Pioneer specs as 0 (front-left), 3 (front), 7 (front right) and 11 (rear)
         sensor_index = [0, 3, 7, 11]
 
         # Get subset of sensor distances using specified sensor indexes
@@ -406,7 +406,8 @@ class PioneerP3dx(Robot):
         # Check if move in progress is near HP doorway by checking distance from current location  to HP centre
         if self.state['int']['lb_move_status']['complete'] is False \
                 and (self.h.within_dist(self.state['ext']['waypoints']['HP Centre'], self.state['ext']['abs_pos_n'],
-                                        dist_threshold=2.1)):
+                                        dist_threshold=2.3)) \
+                and 'degrees' in self.state['int']['lb_turn_status']['args']:
             # Stop robot as close to doorway
             self.stop(self.state['int']['lb_move_status'], world_props, {})
 
@@ -478,6 +479,9 @@ class PioneerP3dx(Robot):
             #    dir = 1
 
             # Prepare args for move action
+            velocity = 0.26
+            if 'fixed' in self.state['int']['lb_turn_status']['args']:
+                velocity = 0.9
             self.state['int']['lb_move_status']['args'] = {'velocity': 0.26, 'distm': 20, 'robot_dir_travel': dir}
 
         # Execute move action until it is signalled complete internally within method
@@ -487,6 +491,61 @@ class PioneerP3dx(Robot):
         if self.state['int']['lb_move_status']['complete']:
             self.state['int']['lb_turn_status']['complete'] = None
             self.state['int']['lb_move_status']['complete'] = None
+
+    def go_home(self, step_status, world_props, args):
+
+        # Get the grid coordinates based on the robot position
+        #xg = math.floor(x / gridSize)
+        #yg = math.floor(y / gridSize)
+
+        # load occupancy grid
+        self.state['ext']['mapper'].load_map_from_disk()
+
+        for ix, iy in np.ndindex(self.robot.mapper.map_grid.shape):
+            print(self.robot.mapper.map_grid.shape[ix, iy])
+
+        # #
+        # # start and goal position
+        # sx = 10.0  # [m]
+        # sy = 10.0  # [m]
+        # gx = 50.0  # [m]
+        # gy = 50.0  # [m]
+        # grid_size = 2.0  # [m]
+        # robot_radius = 1.0  # [m]
+        #
+        # # set obstable positions
+        # ox, oy = [], []
+        # for i in range(-10, 60):
+        #     ox.append(i)
+        #     oy.append(-10.0)
+        # for i in range(-10, 60):
+        #     ox.append(60.0)
+        #     oy.append(i)
+        # for i in range(-10, 61):
+        #     ox.append(i)
+        #     oy.append(60.0)
+        # for i in range(-10, 61):
+        #     ox.append(-10.0)
+        #     oy.append(i)
+        # for i in range(-10, 40):
+        #     ox.append(20.0)
+        #     oy.append(i)
+        # for i in range(0, 40):
+        #     ox.append(40.0)
+        #     oy.append(60.0 - i)
+        #
+        # if show_animation:  # pragma: no cover
+        #     plt.plot(ox, oy, ".k")
+        #     plt.plot(sx, sy, "og")
+        #     plt.plot(gx, gy, "xb")
+        #     plt.grid(True)
+        #     plt.axis("equal")
+        # # Use A star
+
+
+
+
+
 
     def wall_follow_pid(self, min_dist, max_dist, gain, motor_index):
         """
