@@ -115,7 +115,7 @@ class Controller:
         self.robot.update_state_compass()
         self.robot.update_state_odometry()
         self.robot.update_state_beacon()
-        self.robot.update_state_map()
+        #self.robot.update_state_map()
 
     def stats(self):
         """

@@ -9,7 +9,7 @@ import numpy as np
 from operator import itemgetter
 import statistics
 import random
-
+import scipy.io
 
 class Robot:
     """
@@ -74,7 +74,7 @@ class PioneerP3dx(Robot):
                       'sensor_us_weights': [0.75 / 180.0 * math.pi, 0.55 / 180.0 * math.pi, 0.5 / 180.0 * math.pi,
                                             0.25 / 180.0 * math.pi, 0.25 / 180.0 * math.pi, 0.5 / 180.0 * math.pi,
                                             0.55 / 180.0 * math.pi, 0.75 / 180.0 * math.pi]}
-
+        self.turn_dir = 0
         self.count = 0
         # Pioneer specific internal and external state
         self.state = {'int': {'motors': [],
@@ -313,6 +313,7 @@ class PioneerP3dx(Robot):
         Turn robot task - calculate new bearing relative to current orientation and turn cw or ccw at constant speed
         """
         if step_status['complete'] is None:
+
             if 'degrees' in args:
                 self.state['int']['compass'].set_to_bearing_add_deg(args['degrees'])
                 lg.message(logging.DEBUG, 'Turn bearing from {} to {}'.format(self.state['int']['compass'].last_read,
@@ -320,6 +321,12 @@ class PioneerP3dx(Robot):
             if 'fixed' in args:
                 self.state['int']['compass'].set_to_bearing_fixed(args['fixed'])
                 lg.message(logging.DEBUG, 'Fixed to bearing {}'.format(self.state['int']['compass'].to_bearing))
+
+            print('Dir setting ', (self.state['int']['compass'].to_bearing - self.state['int']['compass'].last_read_mag_deg + 360) % 360)
+            if (self.state['int']['compass'].to_bearing - self.state['int']['compass'].last_read_mag_deg + 360) % 360 > 180:
+                self.turn_dir = 1
+            else:
+                self.turn_dir = 0
 
             step_status['complete'] = False
 
@@ -336,17 +343,20 @@ class PioneerP3dx(Robot):
             step_status['complete'] = True
             lg.message(logging.INFO, 'Turn event complete')
             return
+        #print('Turn error ', error)
 
-        if error < 0:
-            if error < -30:  # Cap diff
-                error = -30
-            self.state['int']['motor_l_v'] = -0.003 * (error * kp)
-            self.state['int']['motor_r_v'] = 0.003 * (error * kp)
+        if self.turn_dir == 0:
+            error = abs(error)
+            if error > 30:  # Cap diff
+                error = 30
+            self.state['int']['motor_l_v'] = 0.003 * (error * kp)
+            self.state['int']['motor_r_v'] = -0.003 * (error * kp)
         else:
+            error = abs(error)
             if error > 30:
                 error = 30
-            self.state['int']['motor_l_v'] = 0.003 * (error * 0.2)
-            self.state['int']['motor_r_v'] = -0.003 * (error * 0.2)
+            self.state['int']['motor_l_v'] = -0.003 * (error * 0.2)
+            self.state['int']['motor_r_v'] = 0.003 * (error * 0.2)
 
         self.set_motor_v()
 
@@ -411,12 +421,6 @@ class PioneerP3dx(Robot):
             # Stop robot as close to doorway
             self.stop(self.state['int']['lb_move_status'], world_props, {})
 
-            # Move robot away from doorway by nudging it the robot away in opposite direction
-            #self.state['int']['motor_l_v'] = 0.6 * (self.robot_dir_travel * -1)
-            #self.state['int']['motor_r_v'] = 0.6 * (self.robot_dir_travel * -1)
-            #self.set_motor_v()
-            #time.sleep(0.8)
-
             # Reset, ready to start a new turn & move combo
             self.state['int']['lb_turn_status']['complete'] = None
             self.state['int']['lb_move_status']['complete'] = None
@@ -434,7 +438,7 @@ class PioneerP3dx(Robot):
             sensor_list = list(itemgetter(*sensor_index)(sensors))
 
             if (self.h.within_dist(self.state['ext']['waypoints']['HP Centre'], self.state['ext']['abs_pos_n'],
-                                dist_threshold=2.1)):
+                                dist_threshold=2.3)):
                 random_degree = random.randrange(120, 240, 2)
                 self.state['int']['lb_turn_status']['degrees'] = random_degree
 
@@ -467,17 +471,6 @@ class PioneerP3dx(Robot):
         if self.state['int']['lb_move_status']['complete'] is None:
             self.state['int']['lb_move_status']['start_m'] = self.get_distance()  # Current dist travelled as start dist
             dir = 1
-            # Flip direction of travel if within vicinity of HP doorway
-            #if self.h.within_dist(self.state['ext']['waypoints']['HP Centre'], self.state['ext']['abs_pos_n'], dist_threshold=2.1):
-            #    dir = self.robot_dir_travel * -1
-            #else:
-                # Otherwise if front sensor shows greater distance than rear then move forward, else reverse
-                #if sensor_list[0] > sensor_list[1]:
-                #    dir = 1
-                #else:
-                #    dir = -1
-            #    dir = 1
-
             # Prepare args for move action
             velocity = 0.26
             if 'fixed' in self.state['int']['lb_turn_status']['args']:
@@ -494,58 +487,146 @@ class PioneerP3dx(Robot):
 
     def go_home(self, step_status, world_props, args):
 
-        # Get the grid coordinates based on the robot position
-        #xg = math.floor(x / gridSize)
-        #yg = math.floor(y / gridSize)
+        #self.state['ext']['mapper'].path_planner()
 
-        # load occupancy grid
-        self.state['ext']['mapper'].load_map_from_disk()
+        if step_status['complete'] is None:
 
-        for ix, iy in np.ndindex(self.robot.mapper.map_grid.shape):
-            print(self.robot.mapper.map_grid.shape[ix, iy])
+            self.state['ext']['mapper'].load_route_from_disk()
+            count = 0
+            for y, x in self.state['ext']['mapper'].route[::10]:
+                count += 1
+                if count > 50:
+                    step_status['complete'] = True
+                    return
+                self.update_state_position()
+                pose = self.state['ext']['abs_pos_n'].copy()
+                while pose[0] == 0.0 and pose[1] == 0.0:
+                    self.update_state_position()
+                    pose = self.state['ext']['abs_pos_n'].copy()
+                pose[0] =(1500 / 2) + (pose[0] * -100) * 1
+                pose[1] =(1500 / 2) + (pose[1] * -100) * 1
+                print('Route X ', x, '  Route Y', y)
+                print('Pose X  ', pose[1], '  Pose Y ', pose[0])
 
-        # #
-        # # start and goal position
-        # sx = 10.0  # [m]
-        # sy = 10.0  # [m]
-        # gx = 50.0  # [m]
-        # gy = 50.0  # [m]
-        # grid_size = 2.0  # [m]
-        # robot_radius = 1.0  # [m]
-        #
-        # # set obstable positions
-        # ox, oy = [], []
-        # for i in range(-10, 60):
-        #     ox.append(i)
-        #     oy.append(-10.0)
-        # for i in range(-10, 60):
-        #     ox.append(60.0)
-        #     oy.append(i)
-        # for i in range(-10, 61):
-        #     ox.append(i)
-        #     oy.append(60.0)
-        # for i in range(-10, 61):
-        #     ox.append(-10.0)
-        #     oy.append(i)
-        # for i in range(-10, 40):
-        #     ox.append(20.0)
-        #     oy.append(i)
-        # for i in range(0, 40):
-        #     ox.append(40.0)
-        #     oy.append(60.0 - i)
-        #
-        # if show_animation:  # pragma: no cover
-        #     plt.plot(ox, oy, ".k")
-        #     plt.plot(sx, sy, "og")
-        #     plt.plot(gx, gy, "xb")
-        #     plt.grid(True)
-        #     plt.axis("equal")
-        # # Use A star
+                deltay = y - pose[0]
+                deltax = x - pose[1]
+                angle = math.degrees(math.atan2(deltay, deltax))
+                angle += 90
+                if angle > 360:
+                    angle -= 360
+                a = (x, y)
+                b = (pose[1], pose[0])
+                #ang1 = np.arctan2(*a[::-1])
+                #ang2 = np.arctan2(*b[::-1])
+                #angle = np.rad2deg((ang2 - ang1) % (2 * np.pi))
+                print('Angle ', angle)
+                dist = (math.hypot(pose[1] - x, pose[0] - y) / 100)
+                print('Dist ', dist)
+                self.state['int']['lb_turn_status']['args'] = {
+                        'fixed': angle,
+                        'radius_threshold': 1.5}
+                self.state['int']['lb_turn_status']['complete'] = None
+                while self.state['int']['lb_turn_status']['complete'] is not True:
+                    self.update_state_compass()
+                    self.update_state_position()
+                    self.turn(self.state['int']['lb_turn_status'], world_props, self.state['int']['lb_turn_status']['args'])
+                self.stop(self.state['int']['lb_turn_status'], world_props, {})
+                self.state['int']['lb_move_status']['args'] = {'velocity': 0.15, 'distm': dist, 'robot_dir_travel': 1}
+                self.state['int']['lb_move_status']['complete'] = None
+                self.state['int']['lb_move_status']['start_m'] = self.get_distance()
+                while self.state['int']['lb_move_status']['complete'] is not True:
+                    self.update_state_compass()
+                    self.update_state_odometry()
+                    self.move(self.state['int']['lb_move_status'], world_props, self.state['int']['lb_move_status']['args'])
+                self.stop(self.state['int']['lb_move_status'], world_props, {})
+                self.state['int']['lb_turn_status']['complete'] = None
+                self.state['int']['lb_move_status']['complete'] = None
 
 
 
 
 
+                # grid_coords_3d = np.array([np.tile(np.arange(0, 1500, 1)[:, None], (1, 1500)),
+                #                            np.tile(np.arange(0, 1500, 1)[:, None].T, (1500, 1))])
+                # grid_to_pose = grid_coords_3d.copy()
+                #
+                # pose = self.state['ext']['abs_pos_n'].copy()
+                # if len(set(pose)) == 1:
+                #     return False
+                # pose[0] = int((1500 / 2) + int(pose[0] * -100) * 1)
+                # pose[1] = int((1500 / 2) + int(pose[1] * -100) * 1)
+                #
+                # grid_to_pose[0, :, :] -= pose[0]
+                # grid_to_pose[1, :, :] -= pose[1]
+                #
+                # bearing = self.state['int']['compass'].last_read_euler
+                # if bearing > 0:
+                #     bearing -= math.pi
+                # else:
+                #     bearing += math.pi
+                #
+                # r_to_c_angle_grid = np.arctan2(grid_to_pose[1, :, :], grid_to_pose[0, :, :]) - bearing
+                # r_to_c_distance_grid = scipy.linalg.norm(grid_to_pose, axis=0)
+                # dist_to_route_step = r_to_c_distance_grid[y, x] / 100
+                # angle_to_route_step = r_to_c_angle_grid[y, x] * -1
+                # print(x, y)
+                # print('Distance to route step ', dist_to_route_step)
+                # print('Angle to route step ', angle_to_route_step)
+                # degrees = angle_to_route_step * (180 / math.pi)
+                # print('Degrees ', degrees)
+                # self.state['int']['lb_turn_status']['args'] = {
+                #     'fixed': degrees,
+                #     'radius_threshold': 0.7}
+                # self.state['int']['lb_turn_status']['complete'] = None
+                # while self.state['int']['lb_turn_status']['complete'] is not True:
+                #     self.update_state_compass()
+                #     self.turn(self.state['int']['lb_turn_status'], world_props, self.state['int']['lb_turn_status']['args'])
+                # self.stop(self.state['int']['lb_turn_status'], world_props, {})
+                # self.state['int']['lb_move_status']['args'] = {'velocity': 0.1, 'distm': dist_to_route_step, 'robot_dir_travel': 1}
+                # self.state['int']['lb_move_status']['complete'] = None
+                # self.state['int']['lb_move_status']['start_m'] = self.get_distance()
+                # while self.state['int']['lb_move_status']['complete'] is not True:
+                #     self.update_state_compass()
+                #     self.update_state_odometry()
+                #     self.move(self.state['int']['lb_move_status'], world_props, self.state['int']['lb_move_status']['args'])
+                # self.stop(self.state['int']['lb_move_status'], world_props, {})
+                # self.state['int']['lb_turn_status']['complete'] = None
+                # self.state['int']['lb_move_status']['complete'] = None
+
+                # P controller attempt
+                # x_error = pose[1] - x
+                # y_error = pose[0] - y
+                # print('x is ', x, ' pose x is ', pose[1])
+                # print('y is ', y, ' pose y is ', pose[0])
+                # print('X error is ', x_error)
+                # print('Y error is ', y_error)
+                #
+                # kp = 0.001
+                # while abs(x_error) > 0.2 and abs(y_error) > 0.2:
+                #     self.update_state_odometry()
+                #     self.update_state_position()
+                #     pose = self.state['ext']['abs_pos_n'].copy()
+                #     pose[0] = int((1500 / 2) + int(pose[0] * -100) * 1)
+                #     pose[1] = int((1500 / 2) + int(pose[1] * -100) * 1)
+                #
+                #     x_error = pose[1] - x
+                #     y_error = pose[0] - y
+                #     print('x is ', x, ' pose x is ', pose[1])
+                #     print('y is ', y, ' pose y is ', pose[0])
+                #     print('X error is ', x_error)
+                #     print('Y error is ', y_error)
+                #     if x_error > 0:
+                #         self.state['int']['motor_l_v'] = (abs(x_error) - abs(y_error)) * kp
+                #         self.state['int']['motor_r_v'] = (abs(x_error) + abs(y_error)) * kp
+                #     else:
+                #         self.state['int']['motor_l_v'] = (abs(x_error) + abs(y_error)) * kp
+                #         self.state['int']['motor_r_v'] = (abs(x_error) - abs(y_error)) * kp
+                #
+                #     self.set_motor_v()
+
+
+
+            step_status['complete'] = False
 
     def wall_follow_pid(self, min_dist, max_dist, gain, motor_index):
         """
