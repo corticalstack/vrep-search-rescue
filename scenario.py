@@ -43,8 +43,9 @@ class Scenario:
         #                          #{'task': 'move', 'robot_dir_travel': 1, 'distm': 2.0, 'velocity': 0.2},
         #                          #{'task': 'set_waypoint', 'wp': 'HP Doorway'},
         #                          #{'task': 'locate_beacon_random'},
-        #                          #{'task': 'stop'}
-                                 {'task': 'go_home'}]}
+        #                          #{'task': 'stop'},
+                                 {'task': 'path_plan', 'mapping_enabled': False}]}
+                                 #{'task': 'go_home', 'mapping_enabled': False}]}
 
         # self.world = {'props': {'min_dist_enabled': True, 'min_dist': 0.05, 'max_dist': 0.28},
         #               'events': [{'task': 'turn', 'degrees': +359},

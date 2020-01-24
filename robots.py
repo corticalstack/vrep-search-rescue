@@ -92,9 +92,13 @@ class PioneerP3dx(Robot):
                               'prox_s': None,
                               'prox_is_less_min_dist_f': False,
                               'prox_is_less_min_dist_r': False,
-                              'lb_status': {'complete': None, 'turns_count': 0, 'start_t': 0, 'start_m': 0},
-                              'lb_turn_status': {'complete': None, 'degrees': 0, 'args': {}},
-                              'lb_move_status': {'complete': None, 'startm': 0, 'args': {}},
+                              'rw_status': {'complete': None, 'turns_count': 0, 'start_t': 0, 'start_m': 0},
+                              'rw_turn_status': {'complete': None, 'degrees': 0, 'args': {}},
+                              'rw_move_status': {'complete': None, 'startm': 0, 'args': {}},
+                              'gh_status': {'complete': None, 'steps_count': 0, 'start_t': 0, 'start_m': 0, 'pose': [],
+                                            'route_x': 0, 'route_y': 0},
+                              'gh_turn_status': {'complete': None, 'degrees': 0, 'args': {}},
+                              'gh_move_status': {'complete': None, 'startm': 0, 'args': {}},
                               'prox_min_dist_f': 0,
                               'prox_min_dist_r': 0,
                               'compass': None,
@@ -406,227 +410,152 @@ class PioneerP3dx(Robot):
 
         self.set_motor_v()
 
-    def locate_beacon_random(self, step_status, world_props, args):
+    def random_wander(self, step_status, world_props, args):
         # Save start distance and time to internal state
-        if self.state['int']['lb_status']['complete'] is None:
-            self.state['int']['lb_status']['start_m'] = self.get_distance()
-            self.state['int']['lb_status']['start_t'] = time.time()
-            self.state['int']['lb_status']['complete'] = False
+        if self.state['int']['rw_status']['complete'] is None:
+            self.state['int']['rw_status']['start_m'] = self.get_distance()
+            self.state['int']['rw_status']['start_t'] = time.time()
+            self.state['int']['rw_status']['complete'] = False
 
         # Check if move in progress is near HP doorway by checking distance from current location  to HP centre
-        if self.state['int']['lb_move_status']['complete'] is False \
+        if self.state['int']['rw_move_status']['complete'] is False \
                 and (self.h.within_dist(self.state['ext']['waypoints']['HP Centre'], self.state['ext']['abs_pos_n'],
                                         dist_threshold=2.3)) \
-                and 'degrees' in self.state['int']['lb_turn_status']['args']:
+                and 'degrees' in self.state['int']['rw_turn_status']['args']:
             # Stop robot as close to doorway
-            self.stop(self.state['int']['lb_move_status'], world_props, {})
+            self.stop(self.state['int']['rw_move_status'], world_props, {})
 
             # Reset, ready to start a new turn & move combo
-            self.state['int']['lb_turn_status']['complete'] = None
-            self.state['int']['lb_move_status']['complete'] = None
+            self.state['int']['rw_turn_status']['complete'] = None
+            self.state['int']['rw_move_status']['complete'] = None
 
         # Get sensor distances, can now use maximum range when pinging scene
         clip_distance = self.state['int']['prox_s'].max_detection_dist
         sensors = [s[0] if s[0] < clip_distance else clip_distance for s in self.state['int']['prox_s'].last_read]
 
         # Prepare a new random turn
-        if self.state['int']['lb_turn_status']['complete'] is None:
-            self.state['int']['lb_status']['turns_count'] += 1
+        if self.state['int']['rw_turn_status']['complete'] is None:
+            self.state['int']['rw_status']['turns_count'] += 1
 
             # Get ranges for left and right sensors
             sensor_index = [0, 7]
             sensor_list = list(itemgetter(*sensor_index)(sensors))
 
             if (self.h.within_dist(self.state['ext']['waypoints']['HP Centre'], self.state['ext']['abs_pos_n'],
-                                dist_threshold=2.3)):
+                                   dist_threshold=2.3)):
                 random_degree = random.randrange(120, 240, 2)
-                self.state['int']['lb_turn_status']['degrees'] = random_degree
+                self.state['int']['rw_turn_status']['degrees'] = random_degree
 
                 # Prepare args for turn action
-                self.state['int']['lb_turn_status']['args'] = {
-                    'fixed': self.state['int']['lb_turn_status']['degrees'],
+                self.state['int']['rw_turn_status']['args'] = {
+                    'fixed': self.state['int']['rw_turn_status']['degrees'],
                     'radius_threshold': 0.3}
             else:
-            # Random angle to turn
-                random_degree = random.randrange(2, 180, 2)
+                random_degree = random.randrange(2, 180, 2)  # Random angle to turn
                 if sensor_list[0] > sensor_list[1]:
                     random_degree *= -1  # Turn ccw
 
-                self.state['int']['lb_turn_status']['degrees'] = random_degree
+                self.state['int']['rw_turn_status']['degrees'] = random_degree
 
                 # Prepare args for turn action
-                self.state['int']['lb_turn_status']['args'] = {'degrees': self.state['int']['lb_turn_status']['degrees'],
+                self.state['int']['rw_turn_status']['args'] = {'degrees': self.state['int']['rw_turn_status']['degrees'],
                                                                'radius_threshold': 0.3}
 
         # Execute turn action until it is signalled complete internally within method
-        if self.state['int']['lb_turn_status']['complete'] is not True:
-            self.turn(self.state['int']['lb_turn_status'], world_props, self.state['int']['lb_turn_status']['args'])
+        if self.state['int']['rw_turn_status']['complete'] is not True:
+            self.turn(self.state['int']['rw_turn_status'], world_props, self.state['int']['rw_turn_status']['args'])
             return
 
-        # Get ranges for front and rear sensors
-        sensor_index = [3, 11]
-        sensor_list = list(itemgetter(*sensor_index)(sensors))
-
         # Prepare move action
-        if self.state['int']['lb_move_status']['complete'] is None:
-            self.state['int']['lb_move_status']['start_m'] = self.get_distance()  # Current dist travelled as start dist
-            dir = 1
+        if self.state['int']['rw_move_status']['complete'] is None:
+            self.state['int']['rw_move_status']['start_m'] = self.get_distance()  # Current dist travelled as start dist
+
             # Prepare args for move action
+            direction = 1
             velocity = 0.26
-            if 'fixed' in self.state['int']['lb_turn_status']['args']:
+            if 'fixed' in self.state['int']['rw_turn_status']['args']:
                 velocity = 0.9
-            self.state['int']['lb_move_status']['args'] = {'velocity': 0.26, 'distm': 20, 'robot_dir_travel': dir}
+            self.state['int']['rw_move_status']['args'] = {'velocity': velocity, 'distm': 20,
+                                                           'robot_dir_travel': direction}
 
         # Execute move action until it is signalled complete internally within method
-        self.move(self.state['int']['lb_move_status'], world_props, self.state['int']['lb_move_status']['args'])
+        self.move(self.state['int']['rw_move_status'], world_props, self.state['int']['rw_move_status']['args'])
 
         # If move is complete then reset status for turn & move combo, ready for another cycle
-        if self.state['int']['lb_move_status']['complete']:
-            self.state['int']['lb_turn_status']['complete'] = None
-            self.state['int']['lb_move_status']['complete'] = None
+        if self.state['int']['rw_move_status']['complete']:
+            self.state['int']['rw_turn_status']['complete'] = None
+            self.state['int']['rw_move_status']['complete'] = None
+
+    def path_plan(self, step_status, world_props, args):
+        self.state['ext']['mapper'].path_planner()
+        step_status['complete'] = True
 
     def go_home(self, step_status, world_props, args):
-
-        #self.state['ext']['mapper'].path_planner()
-
         if step_status['complete'] is None:
-
-            self.state['ext']['mapper'].load_route_from_disk()
-            count = 0
-            for y, x in self.state['ext']['mapper'].route[::10]:
-                count += 1
-                if count > 50:
-                    step_status['complete'] = True
-                    return
-                self.update_state_position()
-                pose = self.state['ext']['abs_pos_n'].copy()
-                while pose[0] == 0.0 and pose[1] == 0.0:
-                    self.update_state_position()
-                    pose = self.state['ext']['abs_pos_n'].copy()
-                pose[0] =(1500 / 2) + (pose[0] * -100) * 1
-                pose[1] =(1500 / 2) + (pose[1] * -100) * 1
-                print('Route X ', x, '  Route Y', y)
-                print('Pose X  ', pose[1], '  Pose Y ', pose[0])
-
-                deltay = y - pose[0]
-                deltax = x - pose[1]
-                angle = math.degrees(math.atan2(deltay, deltax))
-                angle += 90
-                if angle > 360:
-                    angle -= 360
-                a = (x, y)
-                b = (pose[1], pose[0])
-                #ang1 = np.arctan2(*a[::-1])
-                #ang2 = np.arctan2(*b[::-1])
-                #angle = np.rad2deg((ang2 - ang1) % (2 * np.pi))
-                print('Angle ', angle)
-                dist = (math.hypot(pose[1] - x, pose[0] - y) / 100)
-                print('Dist ', dist)
-                self.state['int']['lb_turn_status']['args'] = {
-                        'fixed': angle,
-                        'radius_threshold': 1.5}
-                self.state['int']['lb_turn_status']['complete'] = None
-                while self.state['int']['lb_turn_status']['complete'] is not True:
-                    self.update_state_compass()
-                    self.update_state_position()
-                    self.turn(self.state['int']['lb_turn_status'], world_props, self.state['int']['lb_turn_status']['args'])
-                self.stop(self.state['int']['lb_turn_status'], world_props, {})
-                self.state['int']['lb_move_status']['args'] = {'velocity': 0.15, 'distm': dist, 'robot_dir_travel': 1}
-                self.state['int']['lb_move_status']['complete'] = None
-                self.state['int']['lb_move_status']['start_m'] = self.get_distance()
-                while self.state['int']['lb_move_status']['complete'] is not True:
-                    self.update_state_compass()
-                    self.update_state_odometry()
-                    self.move(self.state['int']['lb_move_status'], world_props, self.state['int']['lb_move_status']['args'])
-                self.stop(self.state['int']['lb_move_status'], world_props, {})
-                self.state['int']['lb_turn_status']['complete'] = None
-                self.state['int']['lb_move_status']['complete'] = None
-
-
-
-
-
-                # grid_coords_3d = np.array([np.tile(np.arange(0, 1500, 1)[:, None], (1, 1500)),
-                #                            np.tile(np.arange(0, 1500, 1)[:, None].T, (1500, 1))])
-                # grid_to_pose = grid_coords_3d.copy()
-                #
-                # pose = self.state['ext']['abs_pos_n'].copy()
-                # if len(set(pose)) == 1:
-                #     return False
-                # pose[0] = int((1500 / 2) + int(pose[0] * -100) * 1)
-                # pose[1] = int((1500 / 2) + int(pose[1] * -100) * 1)
-                #
-                # grid_to_pose[0, :, :] -= pose[0]
-                # grid_to_pose[1, :, :] -= pose[1]
-                #
-                # bearing = self.state['int']['compass'].last_read_euler
-                # if bearing > 0:
-                #     bearing -= math.pi
-                # else:
-                #     bearing += math.pi
-                #
-                # r_to_c_angle_grid = np.arctan2(grid_to_pose[1, :, :], grid_to_pose[0, :, :]) - bearing
-                # r_to_c_distance_grid = scipy.linalg.norm(grid_to_pose, axis=0)
-                # dist_to_route_step = r_to_c_distance_grid[y, x] / 100
-                # angle_to_route_step = r_to_c_angle_grid[y, x] * -1
-                # print(x, y)
-                # print('Distance to route step ', dist_to_route_step)
-                # print('Angle to route step ', angle_to_route_step)
-                # degrees = angle_to_route_step * (180 / math.pi)
-                # print('Degrees ', degrees)
-                # self.state['int']['lb_turn_status']['args'] = {
-                #     'fixed': degrees,
-                #     'radius_threshold': 0.7}
-                # self.state['int']['lb_turn_status']['complete'] = None
-                # while self.state['int']['lb_turn_status']['complete'] is not True:
-                #     self.update_state_compass()
-                #     self.turn(self.state['int']['lb_turn_status'], world_props, self.state['int']['lb_turn_status']['args'])
-                # self.stop(self.state['int']['lb_turn_status'], world_props, {})
-                # self.state['int']['lb_move_status']['args'] = {'velocity': 0.1, 'distm': dist_to_route_step, 'robot_dir_travel': 1}
-                # self.state['int']['lb_move_status']['complete'] = None
-                # self.state['int']['lb_move_status']['start_m'] = self.get_distance()
-                # while self.state['int']['lb_move_status']['complete'] is not True:
-                #     self.update_state_compass()
-                #     self.update_state_odometry()
-                #     self.move(self.state['int']['lb_move_status'], world_props, self.state['int']['lb_move_status']['args'])
-                # self.stop(self.state['int']['lb_move_status'], world_props, {})
-                # self.state['int']['lb_turn_status']['complete'] = None
-                # self.state['int']['lb_move_status']['complete'] = None
-
-                # P controller attempt
-                # x_error = pose[1] - x
-                # y_error = pose[0] - y
-                # print('x is ', x, ' pose x is ', pose[1])
-                # print('y is ', y, ' pose y is ', pose[0])
-                # print('X error is ', x_error)
-                # print('Y error is ', y_error)
-                #
-                # kp = 0.001
-                # while abs(x_error) > 0.2 and abs(y_error) > 0.2:
-                #     self.update_state_odometry()
-                #     self.update_state_position()
-                #     pose = self.state['ext']['abs_pos_n'].copy()
-                #     pose[0] = int((1500 / 2) + int(pose[0] * -100) * 1)
-                #     pose[1] = int((1500 / 2) + int(pose[1] * -100) * 1)
-                #
-                #     x_error = pose[1] - x
-                #     y_error = pose[0] - y
-                #     print('x is ', x, ' pose x is ', pose[1])
-                #     print('y is ', y, ' pose y is ', pose[0])
-                #     print('X error is ', x_error)
-                #     print('Y error is ', y_error)
-                #     if x_error > 0:
-                #         self.state['int']['motor_l_v'] = (abs(x_error) - abs(y_error)) * kp
-                #         self.state['int']['motor_r_v'] = (abs(x_error) + abs(y_error)) * kp
-                #     else:
-                #         self.state['int']['motor_l_v'] = (abs(x_error) + abs(y_error)) * kp
-                #         self.state['int']['motor_r_v'] = (abs(x_error) - abs(y_error)) * kp
-                #
-                #     self.set_motor_v()
-
-
-
+            self.state['int']['gh_status']['pose'] = self.state['ext']['abs_pos_n'].copy()
+            if self.state['int']['gh_status']['pose'][0] == 0.0 and self.state['int']['gh_status']['pose'][1] == 0.0:
+                return
+            self.state['ext']['mapper'].load_planned_route_from_disk()
+            self.state['int']['gh_status']['start_m'] = self.get_distance()
+            self.state['int']['gh_status']['start_t'] = time.time()
             step_status['complete'] = False
+
+        if step_status['complete'] is False:
+            if len(self.state['ext']['mapper'].planned_route) == 0:
+                step_status['complete'] = True
+                return
+
+        # Prepare a new turn to next route point
+        if self.state['int']['gh_turn_status']['complete'] is None:
+            self.state['int']['gh_status']['pose'] = self.state['ext']['abs_pos_n'].copy()
+            self.state['int']['gh_status']['steps_count'] += 1
+            self.state['int']['gh_status']['route_x'] = self.state['ext']['mapper'].planned_route[0][1]
+            self.state['int']['gh_status']['route_y'] = self.state['ext']['mapper'].planned_route[0][0]
+
+            # Transform world to grid reference units, as route uses grid system from occupancy map
+            self.state['int']['gh_status']['pose'][0] = (1500 / 2) + \
+                                                        (self.state['int']['gh_status']['pose'][0] * -100) * 1
+            self.state['int']['gh_status']['pose'][1] = (1500 / 2) + \
+                                                        (self.state['int']['gh_status']['pose'][1] * -100) * 1
+
+            # Calculate angle from robot bearing to current planned route point
+            delta_y = self.state['int']['gh_status']['route_y'] - self.state['int']['gh_status']['pose'][0]
+            delta_x = self.state['int']['gh_status']['route_x'] - self.state['int']['gh_status']['pose'][1]
+            angle_robot_to_route_point = math.degrees(math.atan2(delta_y, delta_x))
+            angle_robot_to_route_point += 90
+            if angle_robot_to_route_point > 360:
+                angle_robot_to_route_point -= 360
+
+            # Set arguments for turn action
+            self.state['int']['gh_turn_status']['args'] = {'fixed': angle_robot_to_route_point, 'radius_threshold': 1}
+
+        if self.state['int']['gh_turn_status']['complete'] is not True:
+            self.turn(self.state['int']['gh_turn_status'], world_props, self.state['int']['gh_turn_status']['args'])
+            return
+
+        if self.state['int']['gh_move_status']['complete'] is None:
+            # Stop previous turn
+            self.stop(self.state['int']['gh_turn_status'], world_props, {})
+
+            # Calculate distance in metres from robot to current planned route point
+            dist = (math.hypot(self.state['int']['gh_status']['pose'][1] - self.state['int']['gh_status']['route_x'],
+                               self.state['int']['gh_status']['pose'][0] - self.state['int']['gh_status']['route_y']) / 100)
+
+            # Set arguments for move action
+            self.state['int']['gh_move_status']['args'] = {'velocity': 0.15, 'distm': dist, 'robot_dir_travel': 1}
+            self.state['int']['gh_move_status']['start_m'] = self.get_distance()
+
+        if self.state['int']['gh_move_status']['complete'] is not True:
+            self.move(self.state['int']['gh_move_status'], world_props, self.state['int']['gh_move_status']['args'])
+            return
+
+        self.stop(self.state['int']['gh_move_status'], world_props, {})
+        self.state['int']['gh_turn_status']['complete'] = None
+        self.state['int']['gh_move_status']['complete'] = None
+
+        # Remove n route points from the route as too granular for robot movement
+        n = 20
+        del self.state['ext']['mapper'].planned_route[:n]
 
     def wall_follow_pid(self, min_dist, max_dist, gain, motor_index):
         """

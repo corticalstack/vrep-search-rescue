@@ -20,14 +20,13 @@ class Controller:
         self.world_props = world['props']
         self.world_events = world['events']
         self.start_time = 0
-        self.mcount = 0
-        self.mavg = 0
-        self.mtotal = 0
-        self.ftime = False
+        self.scenario_mapping_enabled = False
+        self.step_mapping_enabled = False
+
         # Instantiate helper and connect to VREP
         self.h = Helper()
-        #if not self.h.connected:
-        #    sys.exit()
+        if not self.h.connected:
+            sys.exit()
 
         # Get all objects from running VREP scene
         self.full_scene_object_list, self.simple_object_list = self.h.get_objects()
@@ -43,7 +42,6 @@ class Controller:
         self.h.disconnect_client()
 
     def loop(self):
-
         """
         Sequentially process planned events in a sense>think>act control cycle
         """
@@ -51,8 +49,8 @@ class Controller:
 
         self.start_time = time.time()
 
-        stop_exceptions = ['room_centre', 'turn', 'locate_beacon_random']
-        beacon_tasks = ['locate_beacon_random']
+        stop_exceptions = ['room_centre', 'turn', 'random_wander', 'go_home']
+        beacon_tasks = ['random_wander']
         step_status = {'start_t': time.time(),
                        'start_m': self.robot.get_distance(),
                        'complete': None}
@@ -67,7 +65,6 @@ class Controller:
             step_status['complete'] = None  # Step tristate - not started (None), in progress (False), complete (True)
 
             while not step_status['complete']:
-
                 # Sense
                 self.sense()
 
@@ -78,33 +75,37 @@ class Controller:
                     self.robot.stop(step_status, self.world_props, task_args)
                     continue
 
-                if self.robot.is_prox_to_beacon()and step['task'] in beacon_tasks:
-                    lg.message(logging.INFO, 'Proximity to beacon triggered')
-                    self.robot.state['ext']['mapper'].save_map_to_disk()
-                    lg.message(logging.INFO, 'OG map saved to disk')
-                    self.robot.state['int']['lb_status']['complete'] = True
-                    lg.message(logging.INFO, 'Stop task triggered')
-                    self.robot.stop(step_status, self.world_props, task_args)
-                    lg.message(logging.INFO, 'LBR Distance travelled - {}m'.format(
-                        self.robot.get_distance() - self.robot.state['int']['lb_status']['start_m']))
-                    lg.message(logging.INFO, 'LBR time taken - {}s'.format(
-                        round(time.time() - self.robot.state['int']['lb_status']['start_t'], 2)))
-                    lg.message(logging.INFO, 'LBR number of turns - {}'.format(
-                        self.robot.state['int']['lb_status']['turns_count']))
-                    continue
-
                 # Act
                 if step_status['complete'] is None:
                     # Execute current route plan step
                     task_args = {arg: step[arg] for arg in step if arg not in 'task'}
+
+                    # Check if mapping enabled for specific task. If any tasks enable mapping then flag this scenario
+                    # does mapping in at least one step so the OG can be saved to disk etc
+                    if 'mapping_enabled' in task_args:
+                        if task_args['mapping_enabled'] is True:
+                            self.step_mapping_enabled = True
+                            self.scenario_mapping_enabled = True
+                        else:
+                            self.step_mapping_enabled = False
+
                     lg.message(logging.DEBUG, 'Executing method ' + str(step['task']) + ' args ' + str(task_args))
                     getattr(self.robot, step['task'])(step_status, self.world_props, task_args)
                     continue
 
                 getattr(self.robot, step['task'])(step_status, self.world_props, task_args)
 
-        self.robot.state['ext']['mapper'].render_map()
-        self.robot.state['ext']['mapper'].save_map_to_disk()
+                if step['task'] in beacon_tasks:
+                    if self.robot.is_prox_to_beacon():
+                        self.random_wander_housekeeping_stats(step_status, task_args)
+
+                if step['task'] == 'go_home' and step_status['complete'] is True:
+                    self.go_home_stats(step_status, task_args)
+
+        # Mapping done in at least one step so render and save
+        if self.scenario_mapping_enabled:
+            self.robot.state['ext']['mapper'].render_map()
+            self.robot.state['ext']['mapper'].save_map_to_disk()
 
     def sense(self):
         """
@@ -115,17 +116,43 @@ class Controller:
         self.robot.update_state_compass()
         self.robot.update_state_odometry()
         self.robot.update_state_beacon()
-        #self.robot.update_state_map()
+        if self.step_mapping_enabled:
+            self.robot.update_state_map()
+
+    def random_wander_housekeeping_stats(self, ss, ta):
+        self.robot.state['int']['rw_status']['complete'] = True
+        lg.message(logging.INFO, 'Proximity to beacon triggered')
+
+        if self.step_mapping_enabled:
+            self.robot.state['ext']['mapper'].save_map_to_disk()
+            lg.message(logging.INFO, 'OG map saved to disk')
+
+        lg.message(logging.INFO, 'Stop task triggered')
+        self.robot.stop(ss, self.world_props, ta)
+        lg.message(logging.INFO, 'RW Distance travelled - {}m'.format(
+            self.robot.get_distance() - self.robot.state['int']['rw_status']['start_m']))
+        lg.message(logging.INFO, 'RW time taken - {}s'.format(
+            round(time.time() - self.robot.state['int']['rw_status']['start_t'], 2)))
+        lg.message(logging.INFO, 'RW number of turns - {}'.format(
+            self.robot.state['int']['rw_status']['turns_count']))
+
+    def go_home_stats(self, ss, ta):
+        lg.message(logging.INFO, 'Completed path to home')
+        lg.message(logging.INFO, 'Stop task triggered')
+        self.robot.stop(ss, self.world_props, ta)
+        lg.message(logging.INFO, 'GH Distance travelled - {}m'.format(
+            self.robot.get_distance() - self.robot.state['int']['gh_status']['start_m']))
+        lg.message(logging.INFO, 'GH time taken - {}s'.format(
+            round(time.time() - self.robot.state['int']['gh_status']['start_t'], 2)))
+        lg.message(logging.INFO, 'GH number of route steps taken - {}'.format(
+            self.robot.state['int']['gh_status']['steps_count']))
 
     def stats(self):
         """
         Show simulation statistics
         """
-
         avg_joint_dist = self.robot.get_distance()
-        #avg_speed_ms = round(avg_joint_dist / time_taken, 2)
         lg.message(logging.INFO, 'Distance travelled - {}m'.format(avg_joint_dist))
-        #lg.message(logging.INFO, 'Average speed - {}m/s'.format(avg_speed_ms))
         lg.message(logging.INFO, 'Nav dist diff error - {}cm'.format(round(self.robot.state['int']['err_corr_count'], 2)))
         lg.message(logging.INFO, 'Controller loop complete - time taken - {}s'.format(round(time.time() -
                                                                                             self.start_time, 2)))
