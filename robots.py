@@ -317,7 +317,6 @@ class PioneerP3dx(Robot):
         Turn robot task - calculate new bearing relative to current orientation and turn cw or ccw at constant speed
         """
         if step_status['complete'] is None:
-
             if 'degrees' in args:
                 self.state['int']['compass'].set_to_bearing_add_deg(args['degrees'])
                 lg.message(logging.DEBUG, 'Turn bearing from {} to {}'.format(self.state['int']['compass'].last_read,
@@ -334,8 +333,8 @@ class PioneerP3dx(Robot):
 
             step_status['complete'] = False
 
-        kp = 0.5  # p-controller gain
-        radius_threshold = 0.15
+        kp = 0.3  # p-controller gain
+        radius_threshold = 0.25
         if 'radius_threshold' in args:
             radius_threshold = args['radius_threshold']
 
@@ -381,7 +380,7 @@ class PioneerP3dx(Robot):
         # Task is complete if all sensors read acceptable similar distance to each other (standard deviation)
         if abs(error) < 0.20:
             step_status['complete'] = True
-            lg.message(logging.INFO, 'Wall Follow event complete')
+            lg.message(logging.INFO, 'Room centre event complete')
             self.set_waypoint({}, {}, {'wp': 'HP Centre'})
             return
 
@@ -474,7 +473,7 @@ class PioneerP3dx(Robot):
             direction = 1
             velocity = 0.26
             if 'fixed' in self.state['int']['rw_turn_status']['args']:
-                velocity = 0.9
+                velocity = 0.32
             self.state['int']['rw_move_status']['args'] = {'velocity': velocity, 'distm': 20,
                                                            'robot_dir_travel': direction}
 

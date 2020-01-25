@@ -42,7 +42,7 @@ class Mapper:
         self.free = -0.693
         self.grid_to_pose = None
 
-        self.beacon_loc = (420, 400)
+        self.beacon_loc = (250, 430)
         self.hp_centre_loc = (750, 750)
         self.planned_route = []
 
@@ -137,6 +137,8 @@ class Mapper:
             if -0.5 < self.map_grid[iy, ix] < 0:
                 self.map_grid_binary[iy, ix] = 1
 
+        self.map_grid_binary[550:915, 900:950] = 1
+
         marker_size = 4500
         marker_beacon = '$BEACON$'
         marker_home = '$HOME$'
@@ -149,7 +151,7 @@ class Mapper:
         plt.savefig(fname='plots/binary map from og.png', dpi=300, format='png')
         plt.clf()
 
-        self.map_grid_binary = binary_dilation(self.map_grid_binary, structure=np.ones((23, 23))).astype(int)
+        self.map_grid_binary = binary_dilation(self.map_grid_binary, structure=np.ones((35, 35))).astype(int)
 
         fig, ax = plt.subplots(figsize=(20, 20))
         ax.imshow(self.map_grid_binary, cmap=color_map)
