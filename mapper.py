@@ -137,8 +137,6 @@ class Mapper:
             if -0.5 < self.map_grid[iy, ix] < 0:
                 self.map_grid_binary[iy, ix] = 1
 
-        self.map_grid_binary[550:915, 900:950] = 1
-
         marker_size = 4500
         marker_beacon = '$BEACON$'
         marker_home = '$HOME$'
