@@ -116,7 +116,7 @@ class Controller:
         self.robot.update_state_compass()
         self.robot.update_state_odometry()
         self.robot.update_state_beacon()
-        if self.step_mapping_enabled:
+        if self.step_mapping_enabled:  # Only update map when enabled as cpu expensive
             self.robot.update_state_map()
 
     def random_wander_housekeeping_stats(self, ss, ta):

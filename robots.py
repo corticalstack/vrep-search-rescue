@@ -11,6 +11,7 @@ import statistics
 import random
 import scipy.io
 
+
 class Robot:
     """
     Super class implementing robot
@@ -75,7 +76,7 @@ class PioneerP3dx(Robot):
                                             0.25 / 180.0 * math.pi, 0.25 / 180.0 * math.pi, 0.5 / 180.0 * math.pi,
                                             0.55 / 180.0 * math.pi, 0.75 / 180.0 * math.pi]}
         self.turn_dir = 0
-        self.count = 0
+
         # Pioneer specific internal and external state
         self.state = {'int': {'motors': [],
                               'motor_l_v': 0.0,
@@ -233,6 +234,9 @@ class PioneerP3dx(Robot):
         lg.message(logging.DEBUG, 'Motor right velocity now set at (rad/s) - ' + str(self.state['int']['motor_r_v']))
 
     def get_distance(self):
+        """
+        Aggregate distance rotated by motor revolute joints
+        """
         avg_joint_dist = 0
         try:
             for m in self.state['int']['motors']:
@@ -279,6 +283,8 @@ class PioneerP3dx(Robot):
         """
         Move robot as locomotion task
         """
+
+        # Set p controller gain and error
         kp = 1
         distance = self.prox_dist_dir_travel()
         if distance > 1:
@@ -325,7 +331,7 @@ class PioneerP3dx(Robot):
                 self.state['int']['compass'].set_to_bearing_fixed(args['fixed'])
                 lg.message(logging.DEBUG, 'Fixed to bearing {}'.format(self.state['int']['compass'].to_bearing))
 
-            print('Dir setting ', (self.state['int']['compass'].to_bearing - self.state['int']['compass'].last_read_mag_deg + 360) % 360)
+            # Determine shortest way to turn between 2 bearings
             if (self.state['int']['compass'].to_bearing - self.state['int']['compass'].last_read_mag_deg + 360) % 360 > 180:
                 self.turn_dir = 1
             else:
@@ -338,6 +344,7 @@ class PioneerP3dx(Robot):
         if 'radius_threshold' in args:
             radius_threshold = args['radius_threshold']
 
+        # Set p-controller error
         error = (self.state['int']['compass'].to_bearing -
                  self.state['int']['compass'].last_read_mag_deg + 540) % 360 - 180
 
@@ -346,8 +353,8 @@ class PioneerP3dx(Robot):
             step_status['complete'] = True
             lg.message(logging.INFO, 'Turn event complete')
             return
-        #print('Turn error ', error)
 
+        #  Cap error (based on bearing diff which can be large) for controlled rotational speed
         if self.turn_dir == 0:
             error = abs(error)
             if error > 30:  # Cap diff
@@ -358,8 +365,8 @@ class PioneerP3dx(Robot):
             error = abs(error)
             if error > 30:
                 error = 30
-            self.state['int']['motor_l_v'] = -0.003 * (error * 0.2)
-            self.state['int']['motor_r_v'] = 0.003 * (error * 0.2)
+            self.state['int']['motor_l_v'] = -0.003 * (error * kp)
+            self.state['int']['motor_r_v'] = 0.003 * (error * kp)
 
         self.set_motor_v()
 
@@ -440,6 +447,7 @@ class PioneerP3dx(Robot):
             sensor_index = [0, 7]
             sensor_list = list(itemgetter(*sensor_index)(sensors))
 
+            # Set bearing direction southerly if robot within proximity of HP Centre waypoint
             if (self.h.within_dist(self.state['ext']['waypoints']['HP Centre'], self.state['ext']['abs_pos_n'],
                                    dist_threshold=2.3)):
                 random_degree = random.randrange(120, 240, 2)
@@ -450,7 +458,7 @@ class PioneerP3dx(Robot):
                     'fixed': self.state['int']['rw_turn_status']['degrees'],
                     'radius_threshold': 0.3}
             else:
-                random_degree = random.randrange(2, 180, 2)  # Random angle to turn
+                random_degree = random.randrange(2, 180, 2)  # Otherwise wider arc for stochastic turn
                 if sensor_list[0] > sensor_list[1]:
                     random_degree *= -1  # Turn ccw
 
@@ -490,6 +498,7 @@ class PioneerP3dx(Robot):
         step_status['complete'] = True
 
     def go_home(self, step_status, world_props, args):
+        # On initiating return home, get pre-planned route and set task start metrics
         if step_status['complete'] is None:
             self.state['int']['gh_status']['pose'] = self.state['ext']['abs_pos_n'].copy()
             if self.state['int']['gh_status']['pose'][0] == 0.0 and self.state['int']['gh_status']['pose'][1] == 0.0:
@@ -532,6 +541,7 @@ class PioneerP3dx(Robot):
             self.turn(self.state['int']['gh_turn_status'], world_props, self.state['int']['gh_turn_status']['args'])
             return
 
+        # Turn element is complete so can prepare move directive
         if self.state['int']['gh_move_status']['complete'] is None:
             # Stop previous turn
             self.stop(self.state['int']['gh_turn_status'], world_props, {})
@@ -544,6 +554,7 @@ class PioneerP3dx(Robot):
             self.state['int']['gh_move_status']['args'] = {'velocity': 0.15, 'distm': dist, 'robot_dir_travel': 1}
             self.state['int']['gh_move_status']['start_m'] = self.get_distance()
 
+        # Issue move directive
         if self.state['int']['gh_move_status']['complete'] is not True:
             self.move(self.state['int']['gh_move_status'], world_props, self.state['int']['gh_move_status']['args'])
             return
