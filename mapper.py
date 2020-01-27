@@ -60,6 +60,12 @@ class Mapper:
         return np.sqrt((b[0] - a[0]) ** 2 + (b[1] - a[1]) ** 2)
 
     def update_map(self):
+        """
+        Note the OG mapping here is a refactored version of the original source code found here, by user superjax
+        superjax/occupancy_grid_mapping_example.py on gist.github.com
+        https://gist.github.com/superjax/33151f018407244cb61402e094099c1d
+
+        """
         self.world_to_grid_bearing()
         if not self.world_to_grid_pose():
             return
